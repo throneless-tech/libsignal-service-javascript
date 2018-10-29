@@ -1,5 +1,6 @@
 const WebSocket = require("websocket").w3cwebsocket;
 const fetch = require("node-fetch");
+var https = require("https");
 const ProxyAgent = require("proxy-agent");
 
 const is = require("@sindresorhus/is");
@@ -169,6 +170,10 @@ function _promiseAjax(providedUrl, options) {
     if (proxyUrl) {
       agent = new ProxyAgent(proxyUrl);
     }
+    const httpsOptions = {
+      ca: options.certificateAuthority
+    };
+    agent = new https.Agent(httpsOptions);
 
     const fetchOptions = {
       method: options.type,
