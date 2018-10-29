@@ -1,5 +1,6 @@
 const btoa = require("btoa");
 const EventTarget = require("event-target-shim");
+const Event = require("./event.js");
 const libsignal = require("signal-protocol");
 const protobuf = require("./protobufs.js");
 const ProvisionEnvelope = protobuf.lookupType(
@@ -14,6 +15,12 @@ const createTaskWithTimeout = require("./task_with_timeout.js");
 const helpers = require("./helpers.js");
 
 const ARCHIVE_AGE = 7 * 24 * 60 * 60 * 1000;
+
+const VerifiedStatus = {
+  DEFAULT: 0,
+  VERIFIED: 1,
+  UNVERIFIED: 2
+};
 
 function getNumber(numberId) {
   if (!numberId || !numberId.length) {
@@ -103,7 +110,7 @@ class AccountManager extends EventTarget {
                     "tsdevice:/?uuid=",
                     proto.uuid,
                     "&pub_key=",
-                    encodeURIComponent(btoa(getString(pubKey)))
+                    encodeURIComponent(btoa(helpers.getString(pubKey)))
                   ].join("")
                 );
                 request.respond(200, "OK");
@@ -325,7 +332,7 @@ class AccountManager extends EventTarget {
     readReceipts
   ) {
     const signalingKey = crypto.getRandomBytes(32 + 20);
-    let password = btoa(getString(crypto.getRandomBytes(16)));
+    let password = btoa(helpers.getString(crypto.getRandomBytes(16)));
     password = password.substring(0, password.length - 2);
     const registrationId = libsignal.KeyHelper.generateRegistrationId();
 
@@ -403,7 +410,7 @@ class AccountManager extends EventTarget {
           this.store.put("read-receipt-setting", false);
         }
 
-        this.store.user.setNumberAndDeviceId(
+        this.store.userSetNumberAndDeviceId(
           number,
           response.deviceId || 1,
           deviceName

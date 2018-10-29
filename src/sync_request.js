@@ -3,9 +3,10 @@
  */
 
 "use strict";
-var EventTarget = require("event-target-shim");
-var MessageReceiver = require("./message_receiver.js");
-var MessageSender = require("./sendmessage.js");
+const EventTarget = require("event-target-shim");
+const Event = require("./event.js");
+const MessageReceiver = require("./message_receiver.js");
+const MessageSender = require("./sendmessage.js");
 
 /* eslint-disable more/no-then */
 

@@ -3,12 +3,13 @@
  */
 "use strict";
 
-var EventTarget = require("event-target-shim");
-var FileReader = require("filereader");
-var Long = require("long");
-var crypto = require("./crypto.js");
-var protobuf = require("./protobufs.js");
-var WebSocketMessage = protobuf.lookupType("signalservice.WebSocketMessage");
+const EventTarget = require("event-target-shim");
+const Event = require("./event.js");
+const FileReader = require("filereader");
+const Long = require("long");
+const crypto = require("./crypto.js");
+const protobuf = require("./protobufs.js");
+const WebSocketMessage = protobuf.lookupType("signalservice.WebSocketMessage");
 // eslint-disable-next-line func-names
 /*
    * WebSocket-Resources

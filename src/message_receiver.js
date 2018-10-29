@@ -4,6 +4,7 @@
 const libsignal = require("signal-protocol");
 const ByteBuffer = require("bytebuffer");
 const EventTarget = require("event-target-shim");
+const Event = require("./event.js");
 const Worker = require("tiny-worker");
 const createTaskWithTimeout = require("./task_with_timeout.js");
 const crypto = require("./crypto.js");
