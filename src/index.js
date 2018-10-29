@@ -6,7 +6,7 @@ const origConfigDir = process.env.NODE_CONFIG_DIR;
 process.env.NODE_CONFIG_DIR = __dirname + "/../config";
 const config = require("config");
 process.env.NODE_CONFIG_DIR = origConfigDir;
-let proxyUrl = {};
+let proxyUrl;
 if (config.has("proxyUrl")) {
   proxyUrl = config.get("proxyUrl");
 }

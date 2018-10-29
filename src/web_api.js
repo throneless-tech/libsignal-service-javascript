@@ -160,7 +160,7 @@ function _createSocket(url, { certificateAuthority, proxyUrl }) {
 function _promiseAjax(providedUrl, options) {
   return new Promise((resolve, reject) => {
     const url = providedUrl || `${options.host}/${options.path}`;
-    log.info(options.type, url);
+    console.info(options.type, url);
     const timeout =
       typeof options.timeout !== "undefined" ? options.timeout : 10000;
 
@@ -221,7 +221,7 @@ function _promiseAjax(providedUrl, options) {
           if (options.responseType === "json") {
             if (options.validateResponse) {
               if (!_validateResponse(result, options.validateResponse)) {
-                log.error(options.type, url, response.status, "Error");
+                console.error(options.type, url, response.status, "Error");
                 reject(
                   HTTPError(
                     "promiseAjax: invalid response",
@@ -234,10 +234,10 @@ function _promiseAjax(providedUrl, options) {
             }
           }
           if (response.status >= 0 && response.status < 400) {
-            log.info(options.type, url, response.status, "Success");
+            console.info(options.type, url, response.status, "Success");
             resolve(result, response.status);
           } else {
-            log.error(options.type, url, response.status, "Error");
+            console.error(options.type, url, response.status, "Error");
             reject(
               HTTPError(
                 "promiseAjax: error response",
@@ -250,7 +250,7 @@ function _promiseAjax(providedUrl, options) {
         });
       })
       .catch(e => {
-        log.error(options.type, url, 0, "Error");
+        console.error(options.type, url, 0, "Error");
         const stack = `${e.stack}\nInitial stack:\n${options.stack}`;
         reject(HTTPError("promiseAjax catch", 0, e.toString(), stack));
       });
@@ -651,7 +651,7 @@ function initialize({ url, cdnUrl, certificateAuthority, proxyUrl }) {
     }
 
     function getMessageSocket() {
-      log.info("opening message socket", url);
+      console.info("opening message socket", url);
       const fixedScheme = url
         .replace("https://", "wss://")
         .replace("http://", "ws://");
@@ -665,7 +665,7 @@ function initialize({ url, cdnUrl, certificateAuthority, proxyUrl }) {
     }
 
     function getProvisioningSocket() {
-      log.info("opening provisioning socket", url);
+      console.info("opening provisioning socket", url);
       const fixedScheme = url
         .replace("https://", "wss://")
         .replace("http://", "ws://");

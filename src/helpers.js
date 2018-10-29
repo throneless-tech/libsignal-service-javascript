@@ -64,7 +64,7 @@ function isNumberSane(number) {
  *** JSON'ing Utilities ***
  ************************* */
 function ensureStringed(thing) {
-  if (getStringable(thing)) return this.getString(thing);
+  if (getStringable(thing)) return getString(thing);
   else if (thing instanceof Array) {
     const res = [];
     for (let i = 0; i < thing.length; i += 1) res[i] = ensureStringed(thing[i]);
