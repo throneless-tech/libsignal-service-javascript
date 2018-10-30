@@ -536,13 +536,13 @@ class MessageSender {
   }
 
   resetSession(number, timestamp) {
-    window.log.info("resetting secure session");
+    console.info("resetting secure session");
     const proto = new DataMessage();
     proto.body = "TERMINATE";
     proto.flags = DataMessage.Flags.END_SESSION;
 
     const logError = prefix => error => {
-      window.log.error(prefix, error && error.stack ? error.stack : error);
+      console.error(prefix, error && error.stack ? error.stack : error);
       throw error;
     };
     const deleteAllSessions = targetNumber =>
@@ -553,7 +553,7 @@ class MessageSender {
               targetNumber,
               deviceId
             );
-            window.log.info("deleting sessions for", address.toString());
+            console.info("deleting sessions for", address.toString());
             const sessionCipher = new libsignal.SessionCipher(
               this.store,
               address
@@ -566,9 +566,7 @@ class MessageSender {
     const sendToContact = deleteAllSessions(number)
       .catch(logError("resetSession/deleteAllSessions1 error:"))
       .then(() => {
-        window.log.info(
-          "finished closing local sessions, now sending to contact"
-        );
+        console.info("finished closing local sessions, now sending to contact");
         return this.sendIndividualProto(number, proto, timestamp).catch(
           logError("resetSession/sendToContact error:")
         );

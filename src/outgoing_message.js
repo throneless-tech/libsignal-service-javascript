@@ -92,7 +92,7 @@ class OutgoingMessage {
             );
             const builder = new libsignal.SessionBuilder(this.store, address);
             if (device.registrationId === 0) {
-              window.log.info("device registrationId 0!");
+              console.info("device registrationId 0!");
             }
             return builder.processPreKey(device).catch(error => {
               if (error.message === "Identity key changed") {
@@ -258,7 +258,7 @@ class OutgoingMessage {
           error.timestamp = this.timestamp;
           // eslint-disable-next-line no-param-reassign
           error.originalMessage = Content.encode(this.message).finish();
-          window.log.error(
+          console.error(
             'Got "key changed" error from encrypt - no identityKey for application layer',
             number,
             deviceIds
