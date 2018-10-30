@@ -159,7 +159,7 @@ SignalProtocolStore.prototype = {
   },
   put: function(key, value) {
     if (value === undefined) throw new Error("Tried to store undefined");
-    this.store.setItem("" + key, helpers.jsonThing(value));
+    this.store.setItem("" + key, JSON.stringify(value));
     //localStorage.setItem("" + key, value);
   },
 
@@ -295,7 +295,7 @@ SignalProtocolStore.prototype = {
     return Promise.resolve(this.remove("25519KeypreKey" + keyId));
   },
   clearPreKeyStore: function() {
-    for (let id of Object.keys(this.store)) {
+    for (let id of this.store._keys) {
       if (id.startsWith("25519KeypreKey")) {
         this.remove(id);
       }
@@ -319,7 +319,7 @@ SignalProtocolStore.prototype = {
   },
   loadSignedPreKeys: function() {
     var signedPreKeys = [];
-    for (let id of Object.keys(this.store)) {
+    for (let id of this.store._keys) {
       if (id.startsWith("25519KeysignedKey")) {
         var prekey = this.get(id);
         if (!(prekey.pubKey instanceof ArrayBuffer)) {
@@ -347,7 +347,7 @@ SignalProtocolStore.prototype = {
     return Promise.resolve(this.remove("25519KeysignedKey" + keyId));
   },
   clearSignedPreKeysStore: function() {
-    for (let id of Object.keys(this.store)) {
+    for (let id of this.store._keys) {
       if (id.startsWith("25519KeysignedKey")) {
         this.remove(id);
       }
@@ -359,7 +359,7 @@ SignalProtocolStore.prototype = {
       throw new Error("Tried to get device ids for undefined/null number");
     }
     var collection = [];
-    for (let id of Object.keys(this.store)) {
+    for (let id of this.store._keys) {
       if (id.startsWith("session" + number)) {
         collection.push(this.get(id).deviceId);
       }
@@ -382,7 +382,7 @@ SignalProtocolStore.prototype = {
   },
   removeAllSessions: function(identifier) {
     console.debug("Removing sessions starting with " + identifier);
-    for (let id of Object.keys(this.store)) {
+    for (let id of this.store._keys) {
       if (id.startsWith("session" + identifier)) {
         this.remove(id);
       }
@@ -444,8 +444,35 @@ SignalProtocolStore.prototype = {
   // Not yet processed messages - for resiliency
   getAllUnprocessed: function() {
     var collection = [];
-    for (let id of Object.keys(this.store)) {
+    for (let id of this.store._keys) {
       if (id.startsWith("unprocessed")) {
+        collection.push(this.get(id));
+      }
+    }
+    return Promise.resolve(collection);
+  },
+  countUnprocessed: function() {
+    var collection = [];
+    for (let id of this.store._keys) {
+      if (id.startsWith("unprocessed")) {
+        collection.push(this.get(id));
+      }
+    }
+    return Promise.resolve(collection.length);
+  },
+  removeAllUnprocessed: function() {
+    var collection = [];
+    for (let id of this.store._keys) {
+      if (id.startsWith("unprocessed")) {
+        this.remove(id);
+      }
+    }
+    return Promise.resolve();
+  },
+  getUnprocessed: function(id) {
+    var collection = [];
+    for (let id of this.store._keys) {
+      if (id.startsWith("unprocessed" + id)) {
         collection.push(this.get(id));
       }
     }

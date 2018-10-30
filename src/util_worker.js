@@ -39,5 +39,5 @@ function stringToArrayBufferBase64(string) {
   return ByteBuffer.wrap(string, "base64").toArrayBuffer();
 }
 function arrayBufferToStringBase64(arrayBuffer) {
-  return ByteBuffer.wrap(arrayBuffer).toString("base64");
+  return ByteBuffer.wrap(new Uint8Array(arrayBuffer)).toString("base64");
 }

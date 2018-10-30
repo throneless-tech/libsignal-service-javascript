@@ -106,8 +106,8 @@ switch (args[2]) {
       protocolStore
     );
     messageReceiver.connect();
-    messageReceiver.addEventListener("textsecure:message", function(ev) {
-      console.log(ev.proto.message.body);
+    messageReceiver.addEventListener("message", function(ev) {
+      console.log(ev.data.message.body);
     });
     break;
 }

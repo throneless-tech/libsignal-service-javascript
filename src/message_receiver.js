@@ -218,7 +218,7 @@ class MessageReceiver extends EventTarget {
   }
 
   dispatchAndWait(event) {
-    return Promise.all(this.dispatchEvent(event));
+    return Promise.resolve(this.dispatchEvent(event));
   }
 
   onclose(ev) {
@@ -273,7 +273,7 @@ class MessageReceiver extends EventTarget {
     const promise = crypto
       .decryptWebsocketMessage(request.body, this.signalingKey)
       .then(plaintext => {
-        const envelope = Envelope.decode(plaintext);
+        const envelope = Envelope.decode(new Uint8Array(plaintext));
         // After this point, decoding errors are not the server's
         //   fault, and we should handle them gracefully and tell the
         //   user they received an invalid message
@@ -403,7 +403,7 @@ class MessageReceiver extends EventTarget {
           envelopePlaintext
         );
       }
-      const envelope = Envelope.decode(envelopePlaintext);
+      const envelope = Envelope.decode(new Uint8Array(envelopePlaintext));
 
       const { decrypted } = item;
       if (decrypted) {
@@ -434,7 +434,7 @@ class MessageReceiver extends EventTarget {
 
       try {
         const { id } = item;
-        await this.store.unprocessed.remove(id);
+        await this.store.removeUnprocessed(id);
       } catch (deleteError) {
         console.error(
           "queueCached error deleting item",
@@ -454,17 +454,17 @@ class MessageReceiver extends EventTarget {
 
   async getAllFromCache() {
     console.info("getAllFromCache");
-    const count = await this.store.unprocessed.getCount();
+    const count = await this.store.countUnprocessed();
 
     if (count > 250) {
-      await this.store.unprocessed.removeAll();
+      await this.store.removeAllUnprocessed();
       console.warn(
         `There were ${count} messages in cache. Deleted all instead of reprocessing`
       );
       return [];
     }
 
-    const items = await this.store.unprocessed.getAll();
+    const items = await this.store.getAllUnprocessed();
     console.info("getAllFromCache loaded", items.length, "saved envelopes");
 
     return Promise.all(
@@ -474,9 +474,9 @@ class MessageReceiver extends EventTarget {
         try {
           if (attempts >= 3) {
             console.warn("getAllFromCache final attempt for envelope", item.id);
-            await this.store.unprocessed.remove(item.id);
+            await this.store.removeUnprocessed(item.id);
           } else {
-            await this.store.unprocessed.save({ ...item, attempts });
+            await this.store.updateUnprocessed(item.id, { ...item, attempts });
           }
         } catch (error) {
           console.error(
@@ -495,39 +495,33 @@ class MessageReceiver extends EventTarget {
     const data = {
       id,
       version: 2,
-      envelope: await MessageReceiver.arrayBufferToStringBase64(plaintext),
+      envelope: await this.arrayBufferToStringBase64(plaintext),
       timestamp: Date.now(),
       attempts: 1
     };
-    return this.store.unprocessed.add(data);
+    return this.store.addUnprocessed(data);
   }
 
   async updateCache(envelope, plaintext) {
     const id = this.getEnvelopeId(envelope);
-    const item = await this.store.unprocessed.get(id);
+    const item = await this.store.getUnprocessed(id);
     if (!item) {
       console.error(`updateCache: Didn't find item ${id} in cache to update`);
       return null;
     }
 
-    if (item.get("version") === 2) {
-      item.set(
-        "decrypted",
-        await MessageReceiver.arrayBufferToStringBase64(plaintext)
-      );
+    if (item.version === 2) {
+      item.decrypted = await this.arrayBufferToStringBase64(plaintext);
     } else {
-      item.set(
-        "decrypted",
-        await MessageReceiver.arrayBufferToString(plaintext)
-      );
+      item.decrypted = await this.arrayBufferToString(plaintext);
     }
 
-    return this.store.unprocessed.save(item.attributes);
+    return this.store.updateUnprocessed(id, item.attributes);
   }
 
   removeFromCache(envelope) {
     const id = this.getEnvelopeId(envelope);
-    return this.store.unprocessed.remove(id);
+    return this.store.removeUnprocessed(id);
   }
 
   queueDecryptedEnvelope(envelope, plaintext) {
@@ -646,7 +640,7 @@ class MessageReceiver extends EventTarget {
       envelope.sourceDevice
     );
 
-    const ourNumber = this.store.user.getNumber();
+    const ourNumber = this.store.userGetNumber();
     const number = address.toString().split(".")[0];
     const options = {};
 
@@ -656,7 +650,7 @@ class MessageReceiver extends EventTarget {
     }
 
     const sessionCipher = new libsignal.SessionCipher(
-      this.store.protocol,
+      this.store,
       address,
       options
     );
@@ -752,7 +746,7 @@ class MessageReceiver extends EventTarget {
       this.processDecrypted(envelope, msg, this.number).then(message => {
         const groupId = message.group && message.group.id;
         const isBlocked = this.isGroupBlocked(groupId);
-        const isMe = envelope.source === this.store.user.getNumber();
+        const isMe = envelope.source === this.store.userGetNumber();
         const isLeavingGroup = Boolean(
           message.group && message.group.type === GroupContext.Type.QUIT
         );
@@ -793,7 +787,7 @@ class MessageReceiver extends EventTarget {
       this.processDecrypted(envelope, msg, envelope.source).then(message => {
         const groupId = message.group && message.group.id;
         const isBlocked = this.isGroupBlocked(groupId);
-        const isMe = envelope.source === this.store.user.getNumber();
+        const isMe = envelope.source === this.store.userGetNumber();
         const isLeavingGroup = Boolean(
           message.group && message.group.type === GroupContext.Type.QUIT
         );
@@ -828,7 +822,7 @@ class MessageReceiver extends EventTarget {
   }
 
   innerHandleLegacyMessage(envelope, plaintext) {
-    const message = DataMessage.decode(plaintext);
+    const message = DataMessage.decode(new Uint8Array(plaintext));
     return this.handleDataMessage(envelope, message);
   }
 
@@ -839,7 +833,7 @@ class MessageReceiver extends EventTarget {
   }
 
   innerHandleContentMessage(envelope, plaintext) {
-    const content = Content.decode(plaintext);
+    const content = Content.decode(new Uint8Array(plaintext));
     if (content.syncMessage) {
       return this.handleSyncMessage(envelope, content.syncMessage);
     } else if (content.dataMessage) {
@@ -1141,7 +1135,7 @@ class MessageReceiver extends EventTarget {
     const sentAt = message.sent_at || Date.now();
     const receivedAt = message.received_at || Date.now();
 
-    const ourNumber = this.store.user.getNumber();
+    const ourNumber = this.store.userGetNumber();
     const number = address.getName();
     const device = address.getDeviceId();
     const options = {};
@@ -1152,7 +1146,7 @@ class MessageReceiver extends EventTarget {
     }
 
     const sessionCipher = new libsignal.SessionCipher(
-      this.store.protocol,
+      this.store,
       address,
       options
     );
@@ -1188,7 +1182,7 @@ class MessageReceiver extends EventTarget {
       // This is ugly. But we don't know what kind of proto we need to decode...
       try {
         // Simply decoding as a Content message may throw
-        const content = Content.decode(plaintext);
+        const content = Content.decode(new Uint8Array(plaintext));
 
         // But it might also result in an invalid object, so we try to detect that
         if (this.validateRetryContentMessage(content)) {
@@ -1204,15 +1198,12 @@ class MessageReceiver extends EventTarget {
 
   async handleEndSession(number) {
     console.info("got end session");
-    const deviceIds = await this.store.protocol.getDeviceIds(number);
+    const deviceIds = await this.store.getDeviceIds(number);
 
     return Promise.all(
       deviceIds.map(deviceId => {
         const address = new libsignal.SignalProtocolAddress(number, deviceId);
-        const sessionCipher = new libsignal.SessionCipher(
-          this.store.protocol,
-          address
-        );
+        const sessionCipher = new libsignal.SessionCipher(this.store, address);
 
         console.info("deleting sessions for", address.toString());
         return sessionCipher.deleteAllSessionsForDevice();
