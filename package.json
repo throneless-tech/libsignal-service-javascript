@@ -42,6 +42,7 @@
     "filereader": "^0.10.3",
     "get-random-values": "^1.2.0",
     "libphonenumber-js": "^0.3.14",
+    "lodash": "^4.17.11",
     "long": "^4.0.0",
     "node-fetch": "^2.1.2",
     "protobufjs": "^6.8.6",

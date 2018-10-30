@@ -15,7 +15,7 @@ const DataMessage = protobuf.lookupType("signalservice.DataMessage");
 class OutgoingMessage {
   constructor(server, store, timestamp, numbers, message, silent, callback) {
     if (message.$type === DataMessage) {
-      const content = new Content();
+      const content = Content.create();
       content.dataMessage = message;
       // eslint-disable-next-line no-param-reassign
       message = content;
@@ -48,7 +48,7 @@ class OutgoingMessage {
       // eslint-disable-next-line no-param-reassign
       error = new errors.OutgoingMessageError(
         number,
-        this.message.toArrayBuffer(),
+        Content.encode(this.message).finish(),
         this.timestamp,
         error
       );
@@ -99,7 +99,7 @@ class OutgoingMessage {
                 // eslint-disable-next-line no-param-reassign
                 error.timestamp = this.timestamp;
                 // eslint-disable-next-line no-param-reassign
-                error.originalMessage = this.message.toArrayBuffer();
+                error.originalMessage = Content.encode(this.message).finish();
                 // eslint-disable-next-line no-param-reassign
                 error.identityKey = device.identityKey;
               }
@@ -171,7 +171,7 @@ class OutgoingMessage {
 
   getPlaintext() {
     if (!this.plaintext) {
-      const messageBuffer = this.message.toArrayBuffer();
+      const messageBuffer = Content.encode(this.message).finish();
       this.plaintext = new Uint8Array(
         this.getPaddedMessageLength(messageBuffer.byteLength + 1) - 1
       );
@@ -257,7 +257,7 @@ class OutgoingMessage {
           // eslint-disable-next-line no-param-reassign
           error.timestamp = this.timestamp;
           // eslint-disable-next-line no-param-reassign
-          error.originalMessage = this.message.toArrayBuffer();
+          error.originalMessage = Content.encode(this.message).finish();
           window.log.error(
             'Got "key changed" error from encrypt - no identityKey for application layer',
             number,

@@ -40,7 +40,7 @@ class AccountManager extends EventTarget {
     super(username, password, store);
     this.server = this.constructor.WebAPI.connect({ username, password });
     this.store = store;
-    this.store.put("password", password);
+    this.password = password;
     this.pending = Promise.resolve();
   }
 
@@ -332,8 +332,6 @@ class AccountManager extends EventTarget {
     readReceipts
   ) {
     const signalingKey = crypto.getRandomBytes(32 + 20);
-    let password = btoa(helpers.getString(crypto.getRandomBytes(16)));
-    password = password.substring(0, password.length - 2);
     const registrationId = libsignal.KeyHelper.generateRegistrationId();
 
     const previousNumber = getNumber(this.store.get("number_id"));
@@ -342,7 +340,7 @@ class AccountManager extends EventTarget {
       .confirmCode(
         number,
         verificationCode,
-        password,
+        this.password,
         signalingKey,
         registrationId,
         deviceName
@@ -374,7 +372,6 @@ class AccountManager extends EventTarget {
       .then(response => {
         this.store.remove("identityKey");
         this.store.remove("signaling_key");
-        this.store.remove("password");
         this.store.remove("registrationId");
         this.store.remove("number_id");
         this.store.remove("device_name");
@@ -396,7 +393,6 @@ class AccountManager extends EventTarget {
 
         this.store.put("identityKey", identityKeyPair);
         this.store.put("signaling_key", signalingKey);
-        this.store.put("password", password);
         this.store.put("registrationId", registrationId);
         if (profileKey) {
           this.store.put("profileKey", profileKey);

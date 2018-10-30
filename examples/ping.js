@@ -84,6 +84,7 @@ switch (args[2]) {
         args[3],
         "PING",
         null,
+        null,
         now,
         undefined,
         protocolStore.get("profileKey")
@@ -104,6 +105,7 @@ switch (args[2]) {
       signalingKey,
       protocolStore
     );
+    messageReceiver.connect();
     messageReceiver.addEventListener("textsecure:message", function(ev) {
       console.log(ev.proto.message.body);
     });

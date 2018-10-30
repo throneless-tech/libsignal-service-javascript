@@ -11,10 +11,9 @@ function appendStack(newError, originalError) {
 
 class ReplayableError extends Error {
   constructor(options = {}) {
+    super(options.message);
     this.name = options.name || "ReplayableError";
     this.message = options.message;
-
-    super(options.message);
 
     // Maintains proper stack trace, where our error was thrown (only available on V8)
     //   via https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Error
@@ -29,35 +28,37 @@ class ReplayableError extends Error {
 class IncomingIdentityKeyError extends ReplayableError {
   constructor(number, message, key) {
     // eslint-disable-next-line prefer-destructuring
-    this.number = number.split(".")[0];
-    this.identityKey = key;
+    let n = number.split(".")[0];
     super({
       name: "IncomingIdentityKeyError",
-      message: `The identity of ${this.number} has changed.`
+      message: `The identity of ${n} has changed.`
     });
+    this.number = n;
+    this.identityKey = key;
   }
 }
 
 class OutgoingIdentityKeyError extends ReplayableError {
   constructor(number, message, timestamp, identityKey) {
     // eslint-disable-next-line prefer-destructuring
-    this.number = number.split(".")[0];
-    this.identityKey = identityKey;
+    let n = number.split(".")[0];
     super({
       name: "OutgoingIdentityKeyError",
-      message: `The identity of ${this.number} has changed.`
+      message: `The identity of ${n} has changed.`
     });
+    this.number = n;
+    this.identityKey = identityKey;
   }
 }
 
 class OutgoingMessageError extends ReplayableError {
   constructor(number, message, timestamp, httpError) {
     // eslint-disable-next-line prefer-destructuring
-    this.number = number.split(".")[0];
     super({
       name: "OutgoingMessageError",
       message: httpError ? httpError.message : "no http error"
     });
+    this.number = number.split(".")[0];
     if (httpError) {
       this.code = httpError.code;
       appendStack(this, httpError);
@@ -67,12 +68,12 @@ class OutgoingMessageError extends ReplayableError {
 
 class SendMessageNetworkError extends ReplayableError {
   constructor(number, jsonData, httpError) {
-    this.number = number;
-    this.code = httpError.code;
     super({
       name: "SendMessageNetworkError",
       message: httpError.message
     });
+    this.number = number;
+    this.code = httpError.code;
     appendStack(this, httpError);
   }
 }
@@ -88,20 +89,20 @@ class SignedPreKeyRotationError extends ReplayableError {
 
 class MessageError extends ReplayableError {
   constructor(message, httpError) {
-    this.code = httpError.code;
     super({
       name: "MessageError",
       message: httpError.message
     });
+    this.code = httpError.code;
     appendStack(this, httpError);
   }
 }
 
 class UnregisteredUserError extends Error {
   constructor(number, httpError) {
+    super(httpError.message);
     this.message = httpError.message;
     this.name = "UnregisteredUserError";
-    super(this.message);
     // Maintains proper stack trace, where our error was thrown (only available on V8)
     //   via https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Error
     if (Error.captureStackTrace) {

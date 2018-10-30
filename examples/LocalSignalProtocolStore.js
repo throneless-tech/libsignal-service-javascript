@@ -1,8 +1,9 @@
 var libsignal = require("signal-protocol");
 var helpers = require("../src/helpers.js");
-var LocalStorage = require("node-localstorage").LocalStorage;
-var localStorage = new LocalStorage("./scratch");
 var ByteBuffer = require("bytebuffer");
+var LocalStorage = require("node-localstorage").LocalStorage;
+
+var TIMESTAMP_THRESHOLD = 5 * 1000; // 5 seconds
 
 var VerifiedStatus = {
   DEFAULT: 0,
@@ -156,25 +157,6 @@ SignalProtocolStore.prototype = {
   getLocalRegistrationId: function() {
     return Promise.resolve(this.get("registrationId"));
   },
-  //put: function(key, value) {
-  //  if (key === undefined || value === undefined || key === null || value === null)
-  //    throw new Error("Tried to store undefined/null");
-  //  this.store[key] = value;
-  //},
-  //get: function(key, defaultValue) {
-  //  if (key === null || key === undefined)
-  //    throw new Error("Tried to get value for undefined/null key");
-  //  if (key in this.store) {
-  //    return this.store[key];
-  //  } else {
-  //    return defaultValue;
-  //  }
-  //},
-  //remove: function(key) {
-  //  if (key === null || key === undefined)
-  //    throw new Error("Tried to remove value for undefined/null key");
-  //  delete this.store[key];
-  //},
   put: function(key, value) {
     if (value === undefined) throw new Error("Tried to store undefined");
     this.store.setItem("" + key, helpers.jsonThing(value));
@@ -191,7 +173,9 @@ SignalProtocolStore.prototype = {
   remove: function(key) {
     this.store.removeItem("" + key);
   },
-
+  clear: function() {
+    this.store = {};
+  },
   isTrustedIdentity: function(identifier, identityKey, direction) {
     if (identifier === null || identifier === undefined) {
       throw new Error("tried to check identity key for undefined/null key");
@@ -204,7 +188,7 @@ SignalProtocolStore.prototype = {
       return Promise.resolve(true);
     }
     return Promise.resolve(
-      helpers.toString(identityKey) === helpers.toString(trusted)
+      helpers.getString(identityKey) === helpers.getString(trusted.publicKey)
     );
   },
   loadIdentityKey: function(identifier) {
@@ -218,7 +202,6 @@ SignalProtocolStore.prototype = {
     }
   },
   saveIdentity: function(identifier, identityKey, nonblockingApproval) {
-    //console.log("Saving identity with identifier: " + identifier + " and key: " + identityKey);
     if (identifier === null || identifier === undefined)
       throw new Error("Tried to put identity key for undefined/null key");
     if (!(identityKey instanceof ArrayBuffer)) {
@@ -232,7 +215,7 @@ SignalProtocolStore.prototype = {
 
     var existing = this.get("identityKey" + identifier, null);
     if (existing === null) {
-      console.log("Saving new identity...");
+      console.debug("Saving new identity...");
       identityRecord.publicKey = identityKey;
       identityRecord.firstUse = true;
       identityRecord.timestamp = Date.now();
@@ -241,7 +224,7 @@ SignalProtocolStore.prototype = {
       this.put("identityKey" + identifier, identityRecord);
       return Promise.resolve(false);
     } else if (!equalArrayBuffers(existing.publicKey, identityKey)) {
-      console.log("Replacing existing identity...");
+      console.debug("Replacing existing identity...");
       var verifiedStatus;
       if (
         existing.verifiedStatus === VerifiedStatus.VERIFIED ||
@@ -263,7 +246,7 @@ SignalProtocolStore.prototype = {
       existing !== null &&
       this.isNonBlockingApprovalRequired(existing)
     ) {
-      console.log("Setting approval status...");
+      console.debug("Setting approval status...");
       existing.nonblockingApproval = true;
       this.put("identityKey" + identifier, existing);
       return Promise.resolve(true);
@@ -273,21 +256,21 @@ SignalProtocolStore.prototype = {
   },
   isNonBlockingApprovalRequired: function(identityRecord) {
     return (
-      !identityRecord.get("firstUse") &&
-      Date.now() - identityRecord.get("timestamp") < TIMESTAMP_THRESHOLD &&
-      !identityRecord.get("nonblockingApproval")
+      !(
+        identityRecord.firstUse === null ||
+        identityRecord.firstUse === undefined
+      ) &&
+      Date.now() - identityRecord.timestamp < TIMESTAMP_THRESHOLD &&
+      identityRecord.nonblockingApproval
     );
   },
   saveIdentityWithAttributes: function(identifier, attributes) {
     if (identifier === null || identifier === undefined) {
       throw new Error("Tried to put identity key for undefined/null key");
     }
-    //console.log("saving identity:" + identifier);
-    //var address = new libsignal.SignalProtocolAddress.fromString(identifier);
     var number = helpers.unencodeNumber(identifier)[0];
     var identityRecord = new IdentityRecord({ id: number });
     Object.assign(identityRecord, attributes);
-    //this.put('identityKey' + address.getName(), identityRecord);
     this.put("identityKey" + identifier, identityRecord);
     return Promise.resolve();
   },
@@ -312,7 +295,7 @@ SignalProtocolStore.prototype = {
     return Promise.resolve(this.remove("25519KeypreKey" + keyId));
   },
   clearPreKeyStore: function() {
-    for (id of this.store._keys) {
+    for (let id of Object.keys(this.store)) {
       if (id.startsWith("25519KeypreKey")) {
         this.remove(id);
       }
@@ -336,7 +319,7 @@ SignalProtocolStore.prototype = {
   },
   loadSignedPreKeys: function() {
     var signedPreKeys = [];
-    for (id of this.store._keys) {
+    for (let id of Object.keys(this.store)) {
       if (id.startsWith("25519KeysignedKey")) {
         var prekey = this.get(id);
         if (!(prekey.pubKey instanceof ArrayBuffer)) {
@@ -364,7 +347,7 @@ SignalProtocolStore.prototype = {
     return Promise.resolve(this.remove("25519KeysignedKey" + keyId));
   },
   clearSignedPreKeysStore: function() {
-    for (id of this.store._keys) {
+    for (let id of Object.keys(this.store)) {
       if (id.startsWith("25519KeysignedKey")) {
         this.remove(id);
       }
@@ -376,21 +359,21 @@ SignalProtocolStore.prototype = {
       throw new Error("Tried to get device ids for undefined/null number");
     }
     var collection = [];
-    for (id of this.store._keys) {
+    for (let id of Object.keys(this.store)) {
       if (id.startsWith("session" + number)) {
+        console.log(id);
+        console.log(this.get(id));
         collection.push(this.get(id).deviceId);
       }
     }
     return Promise.resolve(collection);
   },
   loadSession: function(identifier) {
-    console.log("Trying to get session for identifier: " + identifier);
+    console.debug("Trying to get session for identifier: " + identifier);
     var session = this.get("session" + identifier, { record: undefined });
     return Promise.resolve(session.record);
   },
   storeSession: function(identifier, record) {
-    //console.log("storeSession");
-    //console.log("Storing session with identifier: " + identifier + " and record: " + record);
     var number = helpers.unencodeNumber(identifier)[0];
     var deviceId = parseInt(helpers.unencodeNumber(identifier)[1]);
     var session = new Session(identifier, record, deviceId, number);
@@ -400,7 +383,8 @@ SignalProtocolStore.prototype = {
     return Promise.resolve(this.remove("session" + identifier));
   },
   removeAllSessions: function(identifier) {
-    for (id of this.store._keys) {
+    console.debug("Removing sessions starting with " + identifier);
+    for (let id of Object.keys(this.store)) {
       if (id.startsWith("session" + identifier)) {
         this.remove(id);
       }
@@ -408,7 +392,7 @@ SignalProtocolStore.prototype = {
     return Promise.resolve();
   },
   archiveSiblingSessions: function(identifier) {
-    console.log("archiveSiblingSessions identifier: " + identifier);
+    console.debug("archiveSiblingSessions identifier: " + identifier);
     var address = libsignal.SignalProtocolAddress.fromString(identifier);
     var ourDeviceId = address.getDeviceId();
     return this.getDeviceIds(address.getName()).then(function(deviceIds) {
@@ -419,7 +403,7 @@ SignalProtocolStore.prototype = {
               address.getName(),
               deviceId
             );
-            console.log("closing session for", sibling.toString());
+            console.debug("closing session for", sibling.toString());
             var sessionCipher = new libsignal.SessionCipher(
               storage.protocol,
               sibling
@@ -462,7 +446,7 @@ SignalProtocolStore.prototype = {
   // Not yet processed messages - for resiliency
   getAllUnprocessed: function() {
     var collection = [];
-    for (id of this.store._keys) {
+    for (let id of Object.keys(this.store)) {
       if (id.startsWith("unprocessed")) {
         collection.push(this.get(id));
       }

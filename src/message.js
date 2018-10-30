@@ -88,10 +88,13 @@ class Message {
   }
 
   toProto() {
-    if (this.dataMessage instanceof DataMessage) {
+    if (
+      this.dataMessage !== undefined &&
+      this.dataMessage.$type === DataMessage
+    ) {
       return this.dataMessage;
     }
-    const proto = new DataMessage();
+    const proto = DataMessage.create({});
     if (this.body) {
       proto.body = this.body;
     }
@@ -139,7 +142,7 @@ class Message {
   }
 
   toArrayBuffer() {
-    return this.toProto().toArrayBuffer();
+    return DataMessage.encode(this.toProto()).finish();
   }
 }
 
