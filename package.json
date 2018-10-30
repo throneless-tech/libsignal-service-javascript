@@ -1,6 +1,6 @@
 {
   "name": "@throneless/libsignal-service",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "A fork of the the libtextsecure components of Signal-Desktop, adapted for use by nodejs.",
   "main": "src/index.js",
   "scripts": {
