@@ -1,4 +1,4 @@
-var libsignal = require("signal-protocol");
+var libsignal = require("@throneless/libsignal-protocol");
 var helpers = require("../src/helpers.js");
 var ByteBuffer = require("bytebuffer");
 

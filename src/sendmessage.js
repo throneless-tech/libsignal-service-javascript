@@ -1,7 +1,7 @@
 /*
  * vim: ts=2:sw=2:expandtab
  */
-var libsignal = require("signal-protocol");
+var libsignal = require("@throneless/libsignal-protocol");
 var crypto = require("./crypto.js");
 var errors = require("./errors.js");
 var OutgoingMessage = require("./outgoing_message.js");

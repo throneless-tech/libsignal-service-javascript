@@ -3,7 +3,7 @@ var assert = require("assert");
 var ProtocolStore = require("./InMemorySignalProtocolStore.js");
 var protocolStore = new ProtocolStore();
 var api = require("../src/index.js");
-var libsignal = require("signal-protocol");
+var libsignal = require("@throneless/libsignal-protocol");
 
 describe("Protocol Wrapper", function() {
   var identifier = "+5558675309";

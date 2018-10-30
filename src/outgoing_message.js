@@ -5,7 +5,7 @@
 /* eslint-disable more/no-then */
 
 const btoa = require("btoa");
-const libsignal = require("signal-protocol");
+const libsignal = require("@throneless/libsignal-protocol");
 const errors = require("./errors.js");
 const Message = require("./message.js");
 const protobuf = require("./protobufs.js");

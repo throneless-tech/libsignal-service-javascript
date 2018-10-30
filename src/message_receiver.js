@@ -2,7 +2,7 @@
  * vim: ts=2:sw=2:expandtab
  */
 const _ = require("lodash");
-const libsignal = require("signal-protocol");
+const libsignal = require("@throneless/libsignal-protocol");
 const ByteBuffer = require("bytebuffer");
 const EventTarget = require("event-target-shim");
 const Event = require("./event.js");

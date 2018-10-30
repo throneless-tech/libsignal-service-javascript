@@ -1,7 +1,7 @@
 const btoa = require("btoa");
 const EventTarget = require("event-target-shim");
 const Event = require("./event.js");
-const libsignal = require("signal-protocol");
+const libsignal = require("@throneless/libsignal-protocol");
 const protobuf = require("./protobufs.js");
 const ProvisionEnvelope = protobuf.lookupType(
   "signalservice.ProvisionEnvelope"
