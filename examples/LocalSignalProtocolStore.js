@@ -361,8 +361,6 @@ SignalProtocolStore.prototype = {
     var collection = [];
     for (let id of Object.keys(this.store)) {
       if (id.startsWith("session" + number)) {
-        console.log(id);
-        console.log(this.get(id));
         collection.push(this.get(id).deviceId);
       }
     }
@@ -523,14 +521,14 @@ SignalProtocolStore.prototype = {
       for (i of finalNumbers)
         groupObject.numberRegistrationIds[finalNumbers[i]] = {};
 
-      return this.putGroup(groupId, groupObject).then(function() {
+      this.putGroup(groupId, groupObject).then(function() {
         return { id: groupId, numbers: finalNumbers };
       });
     });
   },
 
   groupsGetNumbers: function(groupId) {
-    return this.getGroup(groupId).then(function(group) {
+    this.getGroup(groupId).then(function(group) {
       if (group === undefined) return undefined;
 
       return group.numbers;
@@ -538,7 +536,7 @@ SignalProtocolStore.prototype = {
   },
 
   groupsRemoveNumber: function(groupId, number) {
-    return this.getGroup(groupId).then(function(group) {
+    this.getGroup(groupId).then(function(group) {
       if (group === undefined) return undefined;
 
       var me = storage.user.getNumber();
@@ -551,7 +549,7 @@ SignalProtocolStore.prototype = {
       if (i > -1) {
         group.numbers.splice(i, 1);
         delete group.numberRegistrationIds[number];
-        return this.putGroup(groupId, group).then(function() {
+        this.putGroup(groupId, group).then(function() {
           return group.numbers;
         });
       }
@@ -561,7 +559,7 @@ SignalProtocolStore.prototype = {
   },
 
   groupsAddNumbers: function(groupId, numbers) {
-    return this.getGroup(groupId).then(function(group) {
+    this.getGroup(groupId).then(function(group) {
       if (group === undefined) return undefined;
 
       for (i of numbers) {
@@ -574,7 +572,7 @@ SignalProtocolStore.prototype = {
         }
       }
 
-      return this.putGroup(groupId, group).then(function() {
+      this.putGroup(groupId, group).then(function() {
         return group.numbers;
       });
     });
@@ -585,7 +583,7 @@ SignalProtocolStore.prototype = {
   },
 
   groupsGetGroup: function(groupId) {
-    return this.getGroup(groupId).then(function(group) {
+    this.getGroup(groupId).then(function(group) {
       if (group === undefined) return undefined;
 
       return { id: groupId, numbers: group.numbers };
@@ -593,7 +591,7 @@ SignalProtocolStore.prototype = {
   },
 
   groupsUpdateNumbers: function(groupId, numbers) {
-    return this.getGroup(groupId).then(function(group) {
+    this.getGroup(groupId).then(function(group) {
       if (group === undefined)
         throw new Error("Tried to update numbers for unknown group");
 

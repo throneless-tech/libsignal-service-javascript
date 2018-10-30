@@ -9,20 +9,20 @@
  * is an arbitrary string, it just must remain consistent between requests:
  *
  * # Request a verification code for the first number:
- * STORE=./first node ./example/test.js +15555555555 password request
+ * STORE=./first node ./example/ping.js +15555555555 password request
  *
  * # You then receive an SMS to +15555555555 with the code. Verify it:
- * STORE=./first node ./example/test.js +15555555555 password register <CODE>
+ * STORE=./first node ./example/ping.js +15555555555 password register <CODE>
  *
  * # Repeat the process with a second number:
- * STORE=./second node ./example/test.js +15555556666 password request
- * STORE=./second node ./example/test.js +15555556666 password register <CODE>
+ * STORE=./second node ./example/ping.js +15555556666 password request
+ * STORE=./second node ./example/ping.js +15555556666 password register <CODE>
  *
  * # Now in one terminal listen for messages with one number:
- * STORE=./first node ./example/test.js +15555555555 password receive
+ * STORE=./first node ./example/ping.js +15555555555 password receive
  *
  * # And in another terminal send the that number a message:
- * STORE=./second node ./example/test.js +15555556666 password send +15555555555
+ * STORE=./second node ./example/ping.js +15555556666 password send +15555555555
  *
  * # In the first terminal you should see message output, including "PING"
  */
