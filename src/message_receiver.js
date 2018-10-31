@@ -492,10 +492,11 @@ class MessageReceiver extends EventTarget {
 
   async addToCache(envelope, plaintext) {
     const id = this.getEnvelopeId(envelope);
+    const decoded = await this.arrayBufferToStringBase64(plaintext);
     const data = {
       id,
       version: 2,
-      envelope: await this.arrayBufferToStringBase64(plaintext),
+      envelope: new Uint8Array(decoded),
       timestamp: Date.now(),
       attempts: 1
     };
@@ -1374,7 +1375,7 @@ class MessageReceiver extends EventTarget {
   }
 
   arrayBufferToStringBase64(arrayBuffer) {
-    callWorker("arrayBufferToStringBase64", arrayBuffer);
+    callWorker("arrayBufferToStringBase64", new Uint8Array(arrayBuffer));
   }
 }
 

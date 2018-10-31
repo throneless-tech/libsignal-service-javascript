@@ -159,15 +159,13 @@ SignalProtocolStore.prototype = {
   },
   put: function(key, value) {
     if (value === undefined) throw new Error("Tried to store undefined");
-    this.store.setItem("" + key, JSON.stringify(value));
-    //localStorage.setItem("" + key, value);
+    this.store.setItem("" + key, helpers.jsonThing(value));
   },
 
   get: function(key, defaultValue) {
     var value = this.store.getItem("" + key);
     if (value === null) return defaultValue;
     return JSON.parse(value);
-    //return value;
   },
 
   remove: function(key) {
