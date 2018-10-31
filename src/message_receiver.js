@@ -1008,16 +1008,16 @@ class MessageReceiver extends EventTarget {
           // eslint-disable-next-line no-param-reassign
           details.id = details.id.toBinary();
           if (details.active) {
-            return this.store.groups
-              .getGroup(details.id)
+            return this.store
+              .groupsGetGroup(details.id)
               .then(existingGroup => {
                 if (existingGroup === undefined) {
-                  return this.store.groups.createNewGroup(
+                  return this.store.groupsCreateNewGroup(
                     details.members,
                     details.id
                   );
                 }
-                return this.store.groups.updateNumbers(
+                return this.store.groupsUpdateNumbers(
                   details.id,
                   details.members
                 );
@@ -1246,7 +1246,7 @@ class MessageReceiver extends EventTarget {
     const promises = [];
 
     if (decrypted.group !== null) {
-      decrypted.group.id = decrypted.group.id.toBinary();
+      decrypted.group.id = ByteBuffer.wrap(decrypted.group.id).toBinary();
 
       if (decrypted.group.type === GroupContext.Type.UPDATE) {
         if (decrypted.group.avatar !== null) {
@@ -1254,16 +1254,14 @@ class MessageReceiver extends EventTarget {
         }
       }
 
-      const storageGroups = this.store.groups;
-
       promises.push(
-        storageGroups.getNumbers(decrypted.group.id).then(existingGroup => {
+        this.store.groupsGetNumbers(decrypted.group.id).then(existingGroup => {
           if (existingGroup === undefined) {
             if (decrypted.group.type !== GroupContext.Type.UPDATE) {
               decrypted.group.members = [source];
               console.warn("Got message for unknown group");
             }
-            return this.store.groups.createNewGroup(
+            return this.store.groupsCreateNewGroup(
               decrypted.group.members,
               decrypted.group.id
             );
@@ -1281,7 +1279,7 @@ class MessageReceiver extends EventTarget {
             case GroupContext.Type.UPDATE:
               decrypted.body = null;
               decrypted.attachments = [];
-              return this.store.groups.updateNumbers(
+              return this.store.groupsUpdateNumbers(
                 decrypted.group.id,
                 decrypted.group.members
               );
@@ -1289,9 +1287,9 @@ class MessageReceiver extends EventTarget {
               decrypted.body = null;
               decrypted.attachments = [];
               if (source === this.number) {
-                return this.store.groups.deleteGroup(decrypted.group.id);
+                return this.store.groupsDeleteGroup(decrypted.group.id);
               }
-              return this.store.groups.removeNumber(decrypted.group.id, source);
+              return this.store.groupsRemoveNumber(decrypted.group.id, source);
             case GroupContext.Type.DELIVER:
               decrypted.group.name = null;
               decrypted.group.members = [];

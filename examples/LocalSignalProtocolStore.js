@@ -11,18 +11,6 @@ var VerifiedStatus = {
   UNVERIFIED: 2
 };
 
-// create a random group id that we haven't seen before.
-function generateNewGroupId() {
-  var groupId = getString(libsignal.crypto.getRandomBytes(16));
-  return storage.protocol.getGroup(groupId).then(function(group) {
-    if (group === undefined) {
-      return groupId;
-    } else {
-      console.warn("group id collision"); // probably a bad sign.
-      return generateNewGroupId();
-    }
-  });
-}
 function validateVerifiedStatus(status) {
   if (
     status === VerifiedStatus.DEFAULT ||
@@ -144,6 +132,18 @@ SignalProtocolStore.prototype = {
     RECEIVING: 2
   },
 
+  // create a random group id that we haven't seen before.
+  generateNewGroupId: function() {
+    var groupId = getString(libsignal.crypto.getRandomBytes(16));
+    return this.getGroup(groupId).then(function(group) {
+      if (group === undefined) {
+        return groupId;
+      } else {
+        console.warn("group id collision"); // probably a bad sign.
+        return this.generateNewGroupId();
+      }
+    });
+  },
   getIdentityKeyPair: function() {
     var identityKey = this.get("identityKey");
     if (!(identityKey.pubKey instanceof ArrayBuffer)) {
@@ -400,10 +400,7 @@ SignalProtocolStore.prototype = {
               deviceId
             );
             console.debug("closing session for", sibling.toString());
-            var sessionCipher = new libsignal.SessionCipher(
-              storage.protocol,
-              sibling
-            );
+            var sessionCipher = new libsignal.SessionCipher(this, sibling);
             return sessionCipher.closeOpenSessionForDevice();
           } else {
             return;
@@ -494,19 +491,19 @@ SignalProtocolStore.prototype = {
       this.put("device_name", deviceName);
     }
   },
-  userGetNumber: function(key, defaultValue) {
+  userGetNumber: function() {
     var number_id = this.get("number_id");
     if (number_id === undefined) return undefined;
     return helpers.unencodeNumber(number_id)[0];
   },
 
-  userGetDeviceId: function(key) {
+  userGetDeviceId: function() {
     var number_id = this.get("number_id");
     if (number_id === undefined) return undefined;
     return helpers.unencodeNumber(number_id)[1];
   },
 
-  userGetDeviceName: function(key) {
+  userGetDeviceName: function() {
     return this.get("device_name");
   },
   // GROUP STORAGE
@@ -529,7 +526,7 @@ SignalProtocolStore.prototype = {
         );
       }
     }).then(function() {
-      var me = storage.user.getNumber();
+      var me = this.userGetNumber();
       var haveMe = false;
       var finalNumbers = [];
       for (i of numbers) {
@@ -564,7 +561,7 @@ SignalProtocolStore.prototype = {
     this.getGroup(groupId).then(function(group) {
       if (group === undefined) return undefined;
 
-      var me = storage.user.getNumber();
+      var me = this.userGetNumber();
       if (number == me)
         throw new Error(
           "Cannot remove ourselves from a group, leave the group instead"
