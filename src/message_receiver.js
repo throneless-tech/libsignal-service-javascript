@@ -1074,12 +1074,6 @@ class MessageReceiver extends EventTarget {
   handleAttachment(attachment) {
     // eslint-disable-next-line no-param-reassign
     attachment.id = attachment.id.toString();
-    // eslint-disable-next-line no-param-reassign
-    attachment.key = attachment.key.toArrayBuffer();
-    if (attachment.digest) {
-      // eslint-disable-next-line no-param-reassign
-      attachment.digest = attachment.digest.toArrayBuffer();
-    }
     function decryptAttachment(encrypted) {
       return crypto.decryptAttachment(
         encrypted,
