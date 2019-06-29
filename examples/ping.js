@@ -62,12 +62,18 @@ const accountManager = new api.AccountManager(
 
 switch (args[2]) {
   case "request":
-    accountManager.requestSMSVerification(USERNAME).catch(printError);
+    accountManager
+      .requestSMSVerification(USERNAME)
+      .then(result => {
+        console.log("Sent verification code.");
+        return;
+      })
+      .catch(printError);
     break;
   case "register":
     accountManager
       .registerSingleDevice(USERNAME, args[3])
-      .then(function(result) {
+      .then(result => {
         console.log(result);
       })
       .catch(printError);
@@ -85,18 +91,21 @@ switch (args[2]) {
         "PING",
         null,
         null,
+        null,
+        null,
         now,
         undefined,
-        protocolStore.get("profileKey")
+        protocolStore.get("profileKey"),
+        null
       )
-      .then(function(result) {
+      .then(result => {
         console.log(result);
       })
       .catch(printError);
     break;
   case "receive":
     const signalingKey = ByteBuffer.wrap(
-      protocolStore.get("signaling_key"),
+      api.KeyHelper.getRandomBytes(32 + 20),
       "binary"
     ).toArrayBuffer();
     const messageReceiver = new api.MessageReceiver(
@@ -106,7 +115,7 @@ switch (args[2]) {
       protocolStore
     );
     messageReceiver.connect();
-    messageReceiver.addEventListener("message", function(ev) {
+    messageReceiver.addEventListener("message", ev => {
       console.log(ev.data.message.body);
     });
     break;

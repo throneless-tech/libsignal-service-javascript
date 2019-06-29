@@ -6,10 +6,10 @@
 const libphonenumber = require("libphonenumber-js");
 
 /*
-* This file extends the libphonenumber object with a set of phonenumbery
-* utility functions. libphonenumber must be included before you call these
-* functions, but the order of the files/script-tags doesn't matter.
-*/
+ * This file extends the libphonenumber object with a set of phonenumbery
+ * utility functions. libphonenumber must be included before you call these
+ * functions, but the order of the files/script-tags doesn't matter.
+ */
 
 libphonenumber.util = {
   getRegionCodeForNumber(number) {

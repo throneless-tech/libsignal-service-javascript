@@ -1,10 +1,11 @@
 /*
  * vim: ts=2:sw=2:expandtab
  */
+const debug = require("debug")("libsignal-service:MessageReceiver");
 const _ = require("lodash");
 const libsignal = require("@throneless/libsignal-protocol");
 const ByteBuffer = require("bytebuffer");
-const EventTarget = require("event-target-shim");
+const EventTarget = require("./event_target.js");
 const Event = require("./event.js");
 const Worker = require("tiny-worker");
 const createTaskWithTimeout = require("./task_with_timeout.js");
@@ -12,20 +13,24 @@ const crypto = require("./crypto.js");
 const errors = require("./errors.js");
 const WebSocketResource = require("./websocket-resources.js");
 const protobuf = require("./protobufs.js");
+const Metadata = require("./Metadata.js");
 const Content = protobuf.lookupType("signalservice.Content");
 const DataMessage = protobuf.lookupType("signalservice.DataMessage");
 const Envelope = protobuf.lookupType("signalservice.Envelope");
 const GroupContext = protobuf.lookupType("signalservice.GroupContext");
 const ReceiptMessage = protobuf.lookupType("signalservice.ReceiptMessage");
+const TypingMessage = protobuf.lookupType("signalservice.TypingMessage");
 const { ContactBuffer, GroupBuffer } = require("./contacts_parser.js");
+const getGuid = require("uuid/v4");
 
 /* eslint-disable more/no-then */
 
 const WORKER_TIMEOUT = 60 * 1000; // one minute
+const TIMESTAMP_VALIDATION = false; // pending feature
 
 const _utilWorker = new Worker(__dirname + "/util_worker.js");
 const _jobs = Object.create(null);
-const _DEBUG = false;
+const _DEBUG = true;
 let _jobCounter = 0;
 
 function _makeJob(fnName) {
@@ -33,7 +38,7 @@ function _makeJob(fnName) {
   const id = _jobCounter;
 
   if (_DEBUG) {
-    console.info(`Worker job ${id} (${fnName}) started`);
+    debug(`Worker job ${id} (${fnName}) started`);
   }
   _jobs[id] = {
     fnName,
@@ -53,15 +58,13 @@ function _updateJob(id, data) {
     resolve: value => {
       _removeJob(id);
       const end = Date.now();
-      console.info(
-        `Worker job ${id} (${fnName}) succeeded in ${end - start}ms`
-      );
+      debug(`Worker job ${id} (${fnName}) succeeded in ${end - start}ms`);
       return resolve(value);
     },
     reject: error => {
       _removeJob(id);
       const end = Date.now();
-      console.info(`Worker job ${id} (${fnName}) failed in ${end - start}ms`);
+      debug(`Worker job ${id} (${fnName}) failed in ${end - start}ms`);
       return reject(error);
     }
   };
@@ -135,6 +138,7 @@ class MessageReceiver extends EventTarget {
     this.number = address.getName();
     this.deviceId = address.getDeviceId();
     this.store = store;
+    this.calledClose = false;
 
     this.pending = Promise.resolve();
 
@@ -182,6 +186,12 @@ class MessageReceiver extends EventTarget {
     this.incoming = [this.pending];
   }
 
+  stopProcessing() {
+    debug("MessageReceiver: stopProcessing requested");
+    this.stoppingProcessing = true;
+    return this.close();
+  }
+
   shutdown() {
     if (this.socket) {
       this.socket.onclose = null;
@@ -197,7 +207,7 @@ class MessageReceiver extends EventTarget {
   }
 
   close() {
-    console.info("MessageReceiver.close()");
+    debug("MessageReceiver.close()");
     this.calledClose = true;
 
     // Our WebSocketResource instance will close the socket and emit a 'close' event
@@ -210,19 +220,25 @@ class MessageReceiver extends EventTarget {
   }
 
   onopen() {
-    console.info("websocket open");
+    debug("websocket open");
   }
 
   onerror() {
-    console.error("websocket error");
+    debug("websocket error");
   }
 
   dispatchAndWait(event) {
-    return Promise.resolve(this.dispatchEvent(event));
+    const promise = this.appPromise || Promise.resolve();
+    const appJobPromise = Promise.all(this.dispatchEvent(event));
+    const job = () => appJobPromise;
+
+    this.appPromise = promise.then(job, job);
+
+    return Promise.resolve();
   }
 
   onclose(ev) {
-    console.info(
+    debug(
       "websocket closed",
       ev.code,
       ev.reason || "",
@@ -259,9 +275,8 @@ class MessageReceiver extends EventTarget {
     // We do the message decryption here, instead of in the ordered pending queue,
     // to avoid exposing the time it took us to process messages through the time-to-ack.
 
-    // TODO: handle different types of requests.
     if (request.path !== "/api/v1/message") {
-      console.info("got request", request.verb, request.path);
+      debug("got request", request.verb, request.path);
       request.respond(200, "OK");
 
       if (request.verb === "PUT" && request.path === "/api/v1/queue/empty") {
@@ -270,8 +285,15 @@ class MessageReceiver extends EventTarget {
       return;
     }
 
-    const promise = crypto
-      .decryptWebsocketMessage(request.body, this.signalingKey)
+    let promise;
+    const headers = request.headers || [];
+    if (headers.includes("X-Signal-Key: true")) {
+      promise = crypto.decryptWebsocketMessage(request.body, this.signalingKey);
+    } else {
+      promise = Promise.resolve(request.body.buffer);
+    }
+
+    promise = promise
       .then(plaintext => {
         const envelope = Envelope.decode(new Uint8Array(plaintext));
         // After this point, decoding errors are not the server's
@@ -281,6 +303,11 @@ class MessageReceiver extends EventTarget {
         if (this.isBlocked(envelope.source)) {
           return request.respond(200, "OK");
         }
+
+        envelope.id = envelope.serverGuid || getGuid();
+        envelope.serverTimestamp = envelope.serverTimestamp
+          ? envelope.serverTimestamp.toNumber()
+          : null;
 
         return this.addToCache(envelope, plaintext).then(
           async () => {
@@ -292,7 +319,7 @@ class MessageReceiver extends EventTarget {
           },
           error => {
             request.respond(500, "Failed to cache message");
-            console.error(
+            debug(
               "handleRequest error trying to add message to cache:",
               error && error.stack ? error.stack : error
             );
@@ -301,10 +328,7 @@ class MessageReceiver extends EventTarget {
       })
       .catch(e => {
         request.respond(500, "Bad encrypted websocket message");
-        console.error(
-          "Error handling incoming message:",
-          e && e.stack ? e.stack : e
-        );
+        debug("Error handling incoming message:", e && e.stack ? e.stack : e);
         const ev = new Event("error");
         ev.error = e;
         return this.dispatchAndWait(ev);
@@ -338,23 +362,34 @@ class MessageReceiver extends EventTarget {
     const { incoming } = this;
     this.incoming = [];
 
-    const dispatchEmpty = () => {
-      console.info("MessageReceiver: emitting 'empty' event");
+    const emitEmpty = () => {
+      debug("MessageReceiver: emitting 'empty' event");
       const ev = new Event("empty");
-      return this.dispatchAndWait(ev);
+      this.dispatchAndWait(ev);
     };
 
-    const queueDispatch = () => {
+    const waitForApplication = async () => {
+      debug(
+        "MessageReceiver: finished processing messages after 'empty', now waiting for application"
+      );
+      const promise = this.appPromise || Promise.resolve();
+      this.appPromise = Promise.resolve();
+
+      // We don't await here because we don't this to gate future message processing
+      promise.then(emitEmpty, emitEmpty);
+    };
+
+    const waitForEmptyQueue = () => {
       // resetting count to zero so everything queued after this starts over again
       this.count = 0;
 
-      this.addToQueue(dispatchEmpty);
+      this.addToQueue(waitForApplication);
     };
 
     // We first wait for all recently-received messages (this.incoming) to be queued,
-    //   then we add a task to emit the 'empty' event to the queue, so all message
-    //   processing is complete by the time it runs.
-    Promise.all(incoming).then(queueDispatch, queueDispatch);
+    //   then we queue a task to wait for the application to finish its processing, then
+    //   finally we emit the 'empty' event to the queue.
+    Promise.all(incoming).then(waitForEmptyQueue, waitForEmptyQueue);
   }
 
   drain() {
@@ -363,7 +398,7 @@ class MessageReceiver extends EventTarget {
 
     const queueDispatch = () =>
       this.addToQueue(() => {
-        console.info("drained");
+        debug("drained");
       });
 
     // This promise will resolve when there are no more messages to be processed.
@@ -404,6 +439,11 @@ class MessageReceiver extends EventTarget {
         );
       }
       const envelope = Envelope.decode(new Uint8Array(envelopePlaintext));
+      envelope.id = envelope.serverGuid || item.id;
+      envelope.source = envelope.source || item.source;
+      envelope.sourceDevice = envelope.sourceDevice || item.sourceDevice;
+      envelope.serverTimestamp =
+        envelope.serverTimestamp || item.serverTimestamp;
 
       const { decrypted } = item;
       if (decrypted) {
@@ -425,7 +465,7 @@ class MessageReceiver extends EventTarget {
         this.queueEnvelope(envelope);
       }
     } catch (error) {
-      console.error(
+      debug(
         "queueCached error handling item",
         item.id,
         "removing it. Error:",
@@ -436,7 +476,7 @@ class MessageReceiver extends EventTarget {
         const { id } = item;
         await this.store.removeUnprocessed(id);
       } catch (deleteError) {
-        console.error(
+        debug(
           "queueCached error deleting item",
           item.id,
           "Error:",
@@ -447,39 +487,43 @@ class MessageReceiver extends EventTarget {
   }
 
   getEnvelopeId(envelope) {
-    return `${envelope.source}.${
-      envelope.sourceDevice
-    } ${envelope.timestamp.toNumber()}`;
+    if (envelope.source) {
+      return `${envelope.source}.${
+        envelope.sourceDevice
+      } ${envelope.timestamp.toNumber()} (${envelope.id})`;
+    }
+
+    return envelope.id;
   }
 
   async getAllFromCache() {
-    console.info("getAllFromCache");
+    debug("getAllFromCache");
     const count = await this.store.countUnprocessed();
 
-    if (count > 250) {
+    if (count > 1500) {
       await this.store.removeAllUnprocessed();
-      console.warn(
+      debug(
         `There were ${count} messages in cache. Deleted all instead of reprocessing`
       );
       return [];
     }
 
     const items = await this.store.getAllUnprocessed();
-    console.info("getAllFromCache loaded", items.length, "saved envelopes");
+    debug("getAllFromCache loaded", items.length, "saved envelopes");
 
     return Promise.all(
       _.map(items, async item => {
         const attempts = 1 + (item.attempts || 0);
 
         try {
-          if (attempts >= 3) {
-            console.warn("getAllFromCache final attempt for envelope", item.id);
+          if (attempts >= 1) {
+            debug("getAllFromCache final attempt for envelope", item.id);
             await this.store.removeUnprocessed(item.id);
           } else {
-            await this.store.updateUnprocessed(item.id, { ...item, attempts });
+            await this.store.updateAttemptsUnprocessed(item.id, attempts);
           }
         } catch (error) {
-          console.error(
+          debug(
             "getAllFromCache error updating item after load:",
             error && error.stack ? error.stack : error
           );
@@ -491,7 +535,7 @@ class MessageReceiver extends EventTarget {
   }
 
   async addToCache(envelope, plaintext) {
-    const id = this.getEnvelopeId(envelope);
+    const { id } = envelope;
     const decoded = await this.arrayBufferToStringBase64(plaintext);
     const data = {
       id,
@@ -504,12 +548,16 @@ class MessageReceiver extends EventTarget {
   }
 
   async updateCache(envelope, plaintext) {
-    const id = this.getEnvelopeId(envelope);
+    const { id } = envelope;
     const item = await this.store.getUnprocessed(id);
     if (!item) {
-      console.error(`updateCache: Didn't find item ${id} in cache to update`);
+      debug(`updateCache: Didn't find item ${id} in cache to update`);
       return null;
     }
+
+    item.source = envelope.source;
+    item.sourceDevice = envelope.sourceDevice;
+    item.serverTimestamp = envelope.serverTimestamp;
 
     if (item.version === 2) {
       item.decrypted = await this.arrayBufferToStringBase64(plaintext);
@@ -517,17 +565,17 @@ class MessageReceiver extends EventTarget {
       item.decrypted = await this.arrayBufferToString(plaintext);
     }
 
-    return this.store.updateUnprocessed(id, item.attributes);
+    return this.store.addDecryptedDataUnprocessed(item.id, item);
   }
 
   removeFromCache(envelope) {
-    const id = this.getEnvelopeId(envelope);
+    const { id } = envelope;
     return this.store.removeUnprocessed(id);
   }
 
   queueDecryptedEnvelope(envelope, plaintext) {
     const id = this.getEnvelopeId(envelope);
-    console.info("queueing decrypted envelope", id);
+    debug("queueing decrypted envelope", id);
 
     const task = this.handleDecryptedEnvelope.bind(this, envelope, plaintext);
     const taskWithTimeout = createTaskWithTimeout(
@@ -537,10 +585,8 @@ class MessageReceiver extends EventTarget {
     const promise = this.addToQueue(taskWithTimeout);
 
     return promise.catch(error => {
-      console.error(
-        "queueDecryptedEnvelope error handling envelope",
-        id,
-        ":",
+      debug(
+        "queueDecryptedEnvelope error handling envelope ${id}:",
         error && error.stack ? error.stack : error
       );
     });
@@ -548,17 +594,15 @@ class MessageReceiver extends EventTarget {
 
   queueEnvelope(envelope) {
     const id = this.getEnvelopeId(envelope);
-    console.info("queueing envelope", id);
+    debug("queueing envelope", id);
 
     const task = this.handleEnvelope.bind(this, envelope);
     const taskWithTimeout = createTaskWithTimeout(task, `queueEnvelope ${id}`);
     const promise = this.addToQueue(taskWithTimeout);
 
     return promise.catch(error => {
-      console.error(
-        "queueEnvelope error handling envelope",
-        id,
-        ":",
+      debug(
+        "queueEnvelope error handling envelope ${id}:",
         error && error.stack ? error.stack : error
       );
     });
@@ -568,6 +612,9 @@ class MessageReceiver extends EventTarget {
   //   messages which were successfully decrypted, but application logic didn't finish
   //   processing.
   handleDecryptedEnvelope(envelope, plaintext) {
+    if (this.stoppingProcessing) {
+      return Promise.resolve();
+    }
     // No decryption is required for delivery receipts, so the decrypted field of
     //   the Unprocessed model will never be set
 
@@ -581,6 +628,10 @@ class MessageReceiver extends EventTarget {
   }
 
   handleEnvelope(envelope) {
+    if (this.stoppingProcessing) {
+      return Promise.resolve();
+    }
+
     if (envelope.type === Envelope.Type.RECEIPT) {
       return this.onDeliveryReceipt(envelope);
     }
@@ -635,6 +686,8 @@ class MessageReceiver extends EventTarget {
   }
 
   decrypt(envelope, ciphertext) {
+    const { serverTrustRoot } = this;
+
     let promise;
     const address = new libsignal.SignalProtocolAddress(
       envelope.source,
@@ -655,39 +708,120 @@ class MessageReceiver extends EventTarget {
       address,
       options
     );
+    const secretSessionCipher = new Metadata.SecretSessionCipher(this.store);
+
+    const me = {
+      number: ourNumber,
+      deviceId: parseInt(this.store.userGetDeviceId(), 10)
+    };
 
     switch (envelope.type) {
       case Envelope.Type.CIPHERTEXT:
-        console.info("message from", this.getEnvelopeId(envelope));
+        debug("message from", this.getEnvelopeId(envelope));
         promise = sessionCipher
           .decryptWhisperMessage(ciphertext)
           .then(this.unpad);
         break;
       case Envelope.Type.PREKEY_BUNDLE:
-        console.info("prekey message from", this.getEnvelopeId(envelope));
+        debug("prekey message from", this.getEnvelopeId(envelope));
         promise = this.decryptPreKeyWhisperMessage(
           ciphertext,
           sessionCipher,
           address
         );
         break;
+      case Envelope.Type.UNIDENTIFIED_SENDER:
+        debug("received unidentified sender message");
+        promise = secretSessionCipher
+          .decrypt(
+            Metadata.createCertificateValidator(serverTrustRoot),
+            ciphertext.toArrayBuffer(),
+            Math.min(envelope.serverTimestamp || Date.now(), Date.now()),
+            me
+          )
+          .then(
+            result => {
+              const { isMe, sender, content } = result;
+
+              // We need to drop incoming messages from ourself since server can't
+              //   do it for us
+              if (isMe) {
+                return { isMe: true };
+              }
+
+              if (this.isBlocked(sender.getName())) {
+                debug(
+                  "Dropping blocked message after sealed sender decryption"
+                );
+                return { isBlocked: true };
+              }
+
+              // Here we take this sender information and attach it back to the envelope
+              //   to make the rest of the app work properly.
+
+              const originalSource = envelope.source;
+
+              // eslint-disable-next-line no-param-reassign
+              envelope.source = sender.getName();
+              // eslint-disable-next-line no-param-reassign
+              envelope.sourceDevice = sender.getDeviceId();
+              // eslint-disable-next-line no-param-reassign
+              envelope.unidentifiedDeliveryReceived = !originalSource;
+
+              // Return just the content because that matches the signature of the other
+              //   decrypt methods used above.
+              return this.unpad(content);
+            },
+            error => {
+              const { sender } = error || {};
+
+              if (sender) {
+                const originalSource = envelope.source;
+
+                if (this.isBlocked(sender.getName())) {
+                  debug(
+                    "Dropping blocked message with error after sealed sender decryption"
+                  );
+                  return { isBlocked: true };
+                }
+
+                // eslint-disable-next-line no-param-reassign
+                envelope.source = sender.getName();
+                // eslint-disable-next-line no-param-reassign
+                envelope.sourceDevice = sender.getDeviceId();
+                // eslint-disable-next-line no-param-reassign
+                envelope.unidentifiedDeliveryReceived = !originalSource;
+
+                throw error;
+              }
+
+              return this.removeFromCache(envelope).then(() => {
+                throw error;
+              });
+            }
+          );
+        break;
       default:
         promise = Promise.reject(new Error("Unknown message type"));
     }
 
     return promise
-      .then(plaintext =>
-        this.updateCache(envelope, plaintext).then(
-          () => plaintext,
-          error => {
-            console.error(
-              "decrypt failed to save decrypted message contents to cache:",
-              error && error.stack ? error.stack : error
-            );
-            return plaintext;
-          }
-        )
-      )
+      .then(plaintext => {
+        const { isMe, isBlocked } = plaintext || {};
+        if (isMe || isBlocked) {
+          this.removeFromCache(envelope);
+          return null;
+        }
+
+        this.updateCache(envelope, plaintext).catch(error => {
+          debug(
+            "decrypt failed to save decrypted message contents to cache:",
+            error && error.stack ? error.stack : error
+          );
+        });
+
+        return plaintext;
+      })
       .catch(error => {
         let errorToThrow = error;
 
@@ -731,13 +865,16 @@ class MessageReceiver extends EventTarget {
     }
   }
 
-  handleSentMessage(
-    envelope,
-    destination,
-    timestamp,
-    msg,
-    expirationStartTimestamp
-  ) {
+  handleSentMessage(envelope, sentContainer) {
+    const {
+      destination,
+      timestamp,
+      message: msg,
+      expirationStartTimestamp,
+      unidentifiedStatus,
+      isRecipientUpdate
+    } = sentContainer;
+
     let p = Promise.resolve();
     // eslint-disable-next-line no-bitwise
     if (msg.flags & DataMessage.Flags.END_SESSION) {
@@ -753,7 +890,7 @@ class MessageReceiver extends EventTarget {
         );
 
         if (groupId && isBlocked && !(isMe && isLeavingGroup)) {
-          console.warn(
+          debug(
             `Message ${this.getEnvelopeId(
               envelope
             )} ignored; destined for blocked group`
@@ -767,7 +904,9 @@ class MessageReceiver extends EventTarget {
           destination,
           timestamp: timestamp.toNumber(),
           device: envelope.sourceDevice,
-          message
+          unidentifiedStatus,
+          message,
+          isRecipientUpdate
         };
         if (expirationStartTimestamp) {
           ev.data.expirationStartTimestamp = expirationStartTimestamp.toNumber();
@@ -778,7 +917,7 @@ class MessageReceiver extends EventTarget {
   }
 
   handleDataMessage(envelope, msg) {
-    console.info("data message from", this.getEnvelopeId(envelope));
+    debug("data message from", this.getEnvelopeId(envelope));
     let p = Promise.resolve();
     // eslint-disable-next-line no-bitwise
     if (msg.flags & DataMessage.Flags.END_SESSION) {
@@ -794,7 +933,7 @@ class MessageReceiver extends EventTarget {
         );
 
         if (groupId && isBlocked && !(isMe && isLeavingGroup)) {
-          console.warn(
+          debug(
             `Message ${this.getEnvelopeId(
               envelope
             )} ignored; destined for blocked group`
@@ -809,6 +948,7 @@ class MessageReceiver extends EventTarget {
           sourceDevice: envelope.sourceDevice,
           timestamp: envelope.timestamp.toNumber(),
           receivedAt: envelope.receivedAt,
+          unidentifiedDeliveryReceived: envelope.unidentifiedDeliveryReceived,
           message
         };
         return this.dispatchAndWait(ev);
@@ -817,9 +957,13 @@ class MessageReceiver extends EventTarget {
   }
 
   handleLegacyMessage(envelope) {
-    return this.decrypt(envelope, envelope.legacyMessage).then(plaintext =>
-      this.innerHandleLegacyMessage(envelope, plaintext)
-    );
+    return this.decrypt(envelope, envelope.legacyMessage).then(plaintext => {
+      if (!plaintext) {
+        debug("handleLegacyMessage: plaintext was falsey");
+        return null;
+      }
+      return this.innerHandleLegacyMessage(envelope, plaintext);
+    });
   }
 
   innerHandleLegacyMessage(envelope, plaintext) {
@@ -828,9 +972,13 @@ class MessageReceiver extends EventTarget {
   }
 
   handleContentMessage(envelope) {
-    return this.decrypt(envelope, envelope.content).then(plaintext =>
-      this.innerHandleContentMessage(envelope, plaintext)
-    );
+    return this.decrypt(envelope, envelope.content).then(plaintext => {
+      if (!plaintext) {
+        debug("handleContentMessage: plaintext was falsey");
+        return null;
+      }
+      return this.innerHandleContentMessage(envelope, plaintext);
+    });
   }
 
   innerHandleContentMessage(envelope, plaintext) {
@@ -845,13 +993,15 @@ class MessageReceiver extends EventTarget {
       return this.handleCallMessage(envelope, content.callMessage);
     } else if (content.receiptMessage) {
       return this.handleReceiptMessage(envelope, content.receiptMessage);
+    } else if (content.typingMessage) {
+      return this.handleTypingMessage(envelope, content.typingMessage);
     }
     this.removeFromCache(envelope);
     throw new Error("Unsupported content message");
   }
 
   handleCallMessage(envelope) {
-    console.info("call message from", this.getEnvelopeId(envelope));
+    debug("call message from", this.getEnvelopeId(envelope));
     this.removeFromCache(envelope);
   }
 
@@ -883,8 +1033,42 @@ class MessageReceiver extends EventTarget {
     return Promise.all(results);
   }
 
+  handleTypingMessage(envelope, typingMessage) {
+    const ev = new Event("typing");
+
+    this.removeFromCache(envelope);
+
+    if (envelope.timestamp && typingMessage.timestamp) {
+      const envelopeTimestamp = envelope.timestamp.toNumber();
+      const typingTimestamp = typingMessage.timestamp.toNumber();
+
+      if (typingTimestamp !== envelopeTimestamp) {
+        debug(
+          `Typing message envelope timestamp (${envelopeTimestamp}) did not match typing timestamp (${typingTimestamp})`
+        );
+        return null;
+      }
+    }
+
+    ev.sender = envelope.source;
+    ev.senderDevice = envelope.sourceDevice;
+    ev.typing = {
+      typingMessage,
+      timestamp: typingMessage.timestamp
+        ? typingMessage.timestamp.toNumber()
+        : Date.now(),
+      groupId: typingMessage.groupId
+        ? typingMessage.groupId.toString("binary")
+        : null,
+      started: typingMessage.action === TypingMessage.Action.STARTED,
+      stopped: typingMessage.action === TypingMessage.Action.STOPPED
+    };
+
+    return this.dispatchEvent(ev);
+  }
+
   handleNullMessage(envelope) {
-    console.info("null message from", this.getEnvelopeId(envelope));
+    debug("null message from", this.getEnvelopeId(envelope));
     this.removeFromCache(envelope);
   }
 
@@ -902,20 +1086,14 @@ class MessageReceiver extends EventTarget {
         ? `group(${sentMessage.message.group.id.toBinary()})`
         : sentMessage.destination;
 
-      console.info(
+      debug(
         "sent message to",
         to,
         sentMessage.timestamp.toNumber(),
         "from",
         this.getEnvelopeId(envelope)
       );
-      return this.handleSentMessage(
-        envelope,
-        sentMessage.destination,
-        sentMessage.timestamp,
-        sentMessage.message,
-        sentMessage.expirationStartTimestamp
-      );
+      return this.handleSentMessage(envelope, sentMessage);
     } else if (syncMessage.contacts) {
       return this.handleContacts(envelope, syncMessage.contacts);
     } else if (syncMessage.groups) {
@@ -923,25 +1101,43 @@ class MessageReceiver extends EventTarget {
     } else if (syncMessage.blocked) {
       return this.handleBlocked(envelope, syncMessage.blocked);
     } else if (syncMessage.request) {
-      console.info("Got SyncMessage Request");
+      debug("Got SyncMessage Request");
       return this.removeFromCache(envelope);
     } else if (syncMessage.read && syncMessage.read.length) {
-      console.info("read messages from", this.getEnvelopeId(envelope));
+      debug("read messages from", this.getEnvelopeId(envelope));
       return this.handleRead(envelope, syncMessage.read);
     } else if (syncMessage.verified) {
       return this.handleVerified(envelope, syncMessage.verified);
     } else if (syncMessage.configuration) {
       return this.handleConfiguration(envelope, syncMessage.configuration);
+    } else if (syncMessage.stickerPackOperation) {
+      return this.handleStickerPackOperation(
+        envelope,
+        syncMessage.stickerPackOperation
+      );
     }
     throw new Error("Got empty SyncMessage");
   }
 
   handleConfiguration(envelope, configuration) {
+    debug("got configuration sync message");
     const ev = new Event("configuration");
     ev.confirm = this.removeFromCache.bind(this, envelope);
-    ev.configuration = {
-      readReceipts: configuration.readReceipts
-    };
+    ev.configuration = configuration;
+    return this.dispatchAndWait(ev);
+  }
+
+  handleStickerPackOperation(envelope, operations) {
+    const ENUM = SyncMessage.StickerPackOperation.Type;
+    debug("got sticker pack operation sync message");
+    const ev = new Event("sticker-pack");
+    ev.confirm = this.removeFromCache.bind(this, envelope);
+    ev.stickerPacks = operations.map(operation => ({
+      id: operation.packId ? operation.packId.toString("hex") : null,
+      key: operation.packKey ? operation.packKey.toString("base64") : null,
+      isInstall: operation.type === ENUM.INSTALL,
+      isRemove: operation.type === ENUM.REMOVE
+    }));
     return this.dispatchAndWait(ev);
   }
 
@@ -972,9 +1168,12 @@ class MessageReceiver extends EventTarget {
   }
 
   handleContacts(envelope, contacts) {
-    console.info("contact sync");
-    const attachmentPointer = contacts.blob;
-    return this.handleAttachment(attachmentPointer).then(() => {
+    debug("contact sync");
+    const { blob } = contacts;
+
+    // Note: we do not return here because we don't want to block the next message on
+    //   this attachment download and a lot of processing of that attachment.
+    this.handleAttachment(blob).then(attachmentPointer => {
       const results = [];
       const contactBuffer = new ContactBuffer(attachmentPointer.data);
       let contactDetails = contactBuffer.next();
@@ -990,53 +1189,30 @@ class MessageReceiver extends EventTarget {
       results.push(this.dispatchAndWait(ev));
 
       return Promise.all(results).then(() => {
-        console.info("handleContacts: finished");
+        debug("handleContacts: finished");
         return this.removeFromCache(envelope);
       });
     });
   }
 
   handleGroups(envelope, groups) {
-    console.info("group sync");
-    const attachmentPointer = groups.blob;
-    return this.handleAttachment(attachmentPointer).then(() => {
+    debug("group sync");
+    const { blob } = groups;
+
+    // Note: we do not return here because we don't want to block the next message on
+    //   this attachment download and a lot of processing of that attachment.
+    this.handleAttachment(blob).then(attachmentPointer => {
       const groupBuffer = new GroupBuffer(attachmentPointer.data);
       let groupDetails = groupBuffer.next();
       const promises = [];
       while (groupDetails !== undefined) {
-        const getGroupDetails = details => {
-          // eslint-disable-next-line no-param-reassign
-          details.id = details.id.toBinary();
-          if (details.active) {
-            return this.store
-              .groupsGetGroup(details.id)
-              .then(existingGroup => {
-                if (existingGroup === undefined) {
-                  return this.store.groupsCreateNewGroup(
-                    details.members,
-                    details.id
-                  );
-                }
-                return this.store.groupsUpdateNumbers(
-                  details.id,
-                  details.members
-                );
-              })
-              .then(() => details);
-          }
-          return Promise.resolve(details);
-        };
-
-        const promise = getGroupDetails(groupDetails)
-          .then(details => {
-            const ev = new Event("group");
-            ev.confirm = this.removeFromCache.bind(this, envelope);
-            ev.groupDetails = details;
-            return this.dispatchAndWait(ev);
-          })
-          .catch(e => {
-            console.error("error processing group", e);
-          });
+        groupDetails.id = groupDetails.id.toBinary();
+        const ev = new Event("group");
+        ev.confirm = this.removeFromCache.bind(this, envelope);
+        ev.groupDetails = groupDetails;
+        const promise = this.dispatchAndWait(ev).catch(e => {
+          debug("error processing group", e);
+        });
         groupDetails = groupBuffer.next();
         promises.push(promise);
       }
@@ -1050,11 +1226,11 @@ class MessageReceiver extends EventTarget {
   }
 
   handleBlocked(envelope, blocked) {
-    console.info("Setting these numbers as blocked:", blocked.numbers);
+    debug("Setting these numbers as blocked:", blocked.numbers);
     this.store.put("blocked", blocked.numbers);
 
     const groupIds = _.map(blocked.groupIds, groupId => groupId.toBinary());
-    console.info(
+    debug(
       "Setting these groups as blocked:",
       groupIds.map(groupId => `group(${groupId})`)
     );
@@ -1071,128 +1247,50 @@ class MessageReceiver extends EventTarget {
     return this.store.get("blocked-groups", []).indexOf(groupId) >= 0;
   }
 
-  handleAttachment(attachment) {
-    // eslint-disable-next-line no-param-reassign
-    attachment.id = attachment.id.toString();
-    function decryptAttachment(encrypted) {
-      return crypto.decryptAttachment(
-        encrypted,
-        attachment.key,
-        attachment.digest
+  cleanAttachment(attachment) {
+    return {
+      ..._.omit(attachment, "thumbnail"),
+      id: attachment.id.toString(),
+      key: attachment.key ? attachment.key.toString("base64") : null,
+      digest: attachment.digest ? attachment.digest.toString("base64") : null
+    };
+  }
+
+  async downloadAttachment(attachment) {
+    const encrypted = await this.server.getAttachment(attachment.id);
+    const { key, digest, size } = attachment;
+
+    if (!digest) {
+      throw new Error("Failure: Ask sender to update Signal and resend.");
+    }
+
+    const data = await crypto.decryptAttachment(
+      encrypted,
+      crypto.base64ToArrayBuffer(key),
+      crypto.base64ToArrayBuffer(digest)
+    );
+
+    if (!size) {
+      throw new Error(
+        `downloadAttachment: Size was not provided, actual size was ${data.byteLength}`
       );
     }
 
-    function updateAttachment(data) {
-      // eslint-disable-next-line no-param-reassign
-      attachment.data = data;
-    }
+    const typedArray = crypto.getFirstBytes(data, size);
 
-    return this.server
-      .getAttachment(attachment.id)
-      .then(decryptAttachment)
-      .then(updateAttachment);
+    return {
+      ..._.omit(attachment, "digest", "key"),
+      data: crypto.typedArrayToArrayBuffer(typedArray)
+    };
   }
 
-  validateRetryContentMessage(content) {
-    // Today this is only called for incoming identity key errors, so it can't be a sync
-    //   message.
-    if (content.syncMessage) {
-      return false;
-    }
-
-    // We want at least one field set, but not more than one
-    let count = 0;
-    count += content.dataMessage ? 1 : 0;
-    count += content.callMessage ? 1 : 0;
-    count += content.nullMessage ? 1 : 0;
-    if (count !== 1) {
-      return false;
-    }
-
-    // It's most likely that dataMessage will be populated, so we look at it in detail
-    const data = content.dataMessage;
-    if (
-      data &&
-      !data.attachments.length &&
-      !data.body &&
-      !data.expireTimer &&
-      !data.flags &&
-      !data.group
-    ) {
-      return false;
-    }
-
-    return true;
-  }
-
-  tryMessageAgain(from, ciphertext, message) {
-    const address = libsignal.SignalProtocolAddress.fromString(from);
-    const sentAt = message.sent_at || Date.now();
-    const receivedAt = message.received_at || Date.now();
-
-    const ourNumber = this.store.userGetNumber();
-    const number = address.getName();
-    const device = address.getDeviceId();
-    const options = {};
-
-    // No limit on message keys if we're communicating with our other devices
-    if (ourNumber === number) {
-      options.messageKeysLimit = false;
-    }
-
-    const sessionCipher = new libsignal.SessionCipher(
-      this.store,
-      address,
-      options
-    );
-    console.info("retrying prekey whisper message");
-    return this.decryptPreKeyWhisperMessage(
-      ciphertext,
-      sessionCipher,
-      address
-    ).then(plaintext => {
-      const envelope = {
-        source: number,
-        sourceDevice: device,
-        receivedAt,
-        timestamp: {
-          toNumber() {
-            return sentAt;
-          }
-        }
-      };
-
-      // Before June, all incoming messages were still DataMessage:
-      //   - iOS: Michael Kirk says that they were sending Legacy messages until June
-      //   - Desktop: https://github.com/signalapp/Signal-Desktop/commit/e8548879db405d9bcd78b82a456ad8d655592c0f
-      //   - Android: https://github.com/signalapp/libsignal-service-java/commit/61a75d023fba950ff9b4c75a249d1a3408e12958
-      //
-      // var d = new Date('2017-06-01T07:00:00.000Z');
-      // d.getTime();
-      const startOfJune = 1496300400000;
-      if (sentAt < startOfJune) {
-        return this.innerHandleLegacyMessage(envelope, plaintext);
-      }
-
-      // This is ugly. But we don't know what kind of proto we need to decode...
-      try {
-        // Simply decoding as a Content message may throw
-        const content = Content.decode(new Uint8Array(plaintext));
-
-        // But it might also result in an invalid object, so we try to detect that
-        if (this.validateRetryContentMessage(content)) {
-          return this.innerHandleContentMessage(envelope, plaintext);
-        }
-      } catch (e) {
-        return this.innerHandleLegacyMessage(envelope, plaintext);
-      }
-
-      return this.innerHandleLegacyMessage(envelope, plaintext);
-    });
+  handleAttachment(attachment) {
+    const cleaned = this.cleanAttachment(attachment);
+    return this.downloadAttachment(cleaned);
   }
 
   async handleEndSession(number) {
-    console.info("got end session");
+    debug("got end session");
     const deviceIds = await this.store.getDeviceIds(number);
 
     return Promise.all(
@@ -1200,13 +1298,13 @@ class MessageReceiver extends EventTarget {
         const address = new libsignal.SignalProtocolAddress(number, deviceId);
         const sessionCipher = new libsignal.SessionCipher(this.store, address);
 
-        console.info("deleting sessions for", address.toString());
+        debug("deleting sessions for", address.toString());
         return sessionCipher.deleteAllSessionsForDevice();
       })
     );
   }
 
-  processDecrypted(envelope, decrypted, source) {
+  processDecrypted(envelope, decrypted) {
     /* eslint-disable no-bitwise, no-param-reassign */
     const FLAGS = DataMessage.Flags;
 
@@ -1214,6 +1312,17 @@ class MessageReceiver extends EventTarget {
     //   processing
     // Note that messages may (generally) only perform one action and we ignore remaining
     //   fields after the first action.
+
+    if (TIMESTAMP_VALIDATION) {
+      const envelopeTimestamp = envelope.timestamp.toNumber();
+      const decryptedTimestamp = decrypted.timestamp.toNumber();
+
+      if (envelopeTimestamp !== decryptedTimestamp) {
+        throw new Error(
+          `Timestamp ${decrypted.timestamp} in DataMessage did not match envelope timestamp ${envelope.timestamp}`
+        );
+      }
+    }
 
     if (decrypted.flags == null) {
       decrypted.flags = 0;
@@ -1242,113 +1351,109 @@ class MessageReceiver extends EventTarget {
     if (decrypted.group !== null) {
       decrypted.group.id = ByteBuffer.wrap(decrypted.group.id).toBinary();
 
-      if (decrypted.group.type === GroupContext.Type.UPDATE) {
-        if (decrypted.group.avatar !== null) {
-          promises.push(this.handleAttachment(decrypted.group.avatar));
-        }
+      switch (decrypted.group.type) {
+        case GroupContext.Type.UPDATE:
+          decrypted.body = null;
+          decrypted.attachments = [];
+          break;
+        case GroupContext.Type.QUIT:
+          decrypted.body = null;
+          decrypted.attachments = [];
+          break;
+        case GroupContext.Type.DELIVER:
+          decrypted.group.name = null;
+          decrypted.group.members = [];
+          decrypted.group.avatar = null;
+          break;
+        default:
+          this.removeFromCache(envelope);
+          throw new Error("Unknown group message type");
       }
+    }
 
-      promises.push(
-        this.store.groupsGetNumbers(decrypted.group.id).then(existingGroup => {
-          if (existingGroup === undefined) {
-            if (decrypted.group.type !== GroupContext.Type.UPDATE) {
-              decrypted.group.members = [source];
-              console.warn("Got message for unknown group");
-            }
-            return this.store.groupsCreateNewGroup(
-              decrypted.group.members,
-              decrypted.group.id
-            );
-          }
-          const fromIndex = existingGroup.indexOf(source);
-
-          if (fromIndex < 0) {
-            // TODO: This could be indication of a race...
-            console.warn(
-              "Sender was not a member of the group they were sending from"
-            );
-          }
-
-          switch (decrypted.group.type) {
-            case GroupContext.Type.UPDATE:
-              decrypted.body = null;
-              decrypted.attachments = [];
-              return this.store.groupsUpdateNumbers(
-                decrypted.group.id,
-                decrypted.group.members
-              );
-            case GroupContext.Type.QUIT:
-              decrypted.body = null;
-              decrypted.attachments = [];
-              if (source === this.number) {
-                return this.store.groupsDeleteGroup(decrypted.group.id);
-              }
-              return this.store.groupsRemoveNumber(decrypted.group.id, source);
-            case GroupContext.Type.DELIVER:
-              decrypted.group.name = null;
-              decrypted.group.members = [];
-              decrypted.group.avatar = null;
-              return Promise.resolve();
-            default:
-              this.removeFromCache(envelope);
-              throw new Error("Unknown group message type");
-          }
-        })
+    const attachmentCount = decrypted.attachments.length;
+    const ATTACHMENT_MAX = 32;
+    if (attachmentCount > ATTACHMENT_MAX) {
+      throw new Error(
+        `Too many attachments: ${attachmentCount} included in one message, max is ${ATTACHMENT_MAX}`
       );
     }
 
-    for (let i = 0, max = decrypted.attachments.length; i < max; i += 1) {
-      const attachment = decrypted.attachments[i];
-      promises.push(this.handleAttachment(attachment));
-    }
+    // Here we go from binary to string/base64 in all AttachmentPointer digest/key fields
 
-    if (decrypted.contact && decrypted.contact.length) {
-      const contacts = decrypted.contact;
-
-      for (let i = 0, max = contacts.length; i < max; i += 1) {
-        const contact = contacts[i];
-        const { avatar } = contact;
-
-        if (avatar && avatar.avatar) {
-          // We don't want the failure of a thumbnail download to fail the handling of
-          //   this message entirely, like we do for full attachments.
-          promises.push(
-            this.handleAttachment(avatar.avatar).catch(error => {
-              console.error(
-                "Problem loading avatar for contact",
-                error && error.stack ? error.stack : error
-              );
-            })
-          );
-        }
+    if (decrypted.group && decrypted.group.type === GroupContext.Type.UPDATE) {
+      if (decrypted.group.avatar !== null) {
+        decrypted.group.avatar = this.cleanAttachment(decrypted.group.avatar);
       }
     }
+
+    decrypted.attachments = (decrypted.attachments || []).map(
+      this.cleanAttachment.bind(this)
+    );
+    decrypted.preview = (decrypted.preview || []).map(item => {
+      const { image } = item;
+
+      if (!image) {
+        return item;
+      }
+
+      return {
+        ...item,
+        image: this.cleanAttachment(image)
+      };
+    });
+    decrypted.contact = (decrypted.contact || []).map(item => {
+      const { avatar } = item;
+
+      if (!avatar || !avatar.avatar) {
+        return item;
+      }
+
+      return {
+        ...item,
+        avatar: {
+          ...item.avatar,
+          avatar: this.cleanAttachment(item.avatar.avatar)
+        }
+      };
+    });
 
     if (decrypted.quote && decrypted.quote.id) {
       decrypted.quote.id = decrypted.quote.id.toNumber();
     }
 
-    if (decrypted.quote && decrypted.quote.attachments) {
-      const { attachments } = decrypted.quote;
+    if (decrypted.quote) {
+      decrypted.quote.attachments = (decrypted.quote.attachments || []).map(
+        item => {
+          const { thumbnail } = item;
 
-      for (let i = 0, max = attachments.length; i < max; i += 1) {
-        const attachment = attachments[i];
-        const { thumbnail } = attachment;
+          if (!thumbnail) {
+            return item;
+          }
 
-        if (thumbnail) {
-          // We don't want the failure of a thumbnail download to fail the handling of
-          //   this message entirely, like we do for full attachments.
-          promises.push(
-            this.handleAttachment(thumbnail).catch(error => {
-              console.error(
-                "Problem loading thumbnail for quote",
-                error && error.stack ? error.stack : error
-              );
-            })
-          );
+          return {
+            ...item,
+            thumbnail: this.cleanAttachment(item.thumbnail)
+          };
         }
+      );
+    }
+
+    const { sticker } = decrypted;
+    if (sticker) {
+      if (sticker.packId) {
+        sticker.packId = sticker.packId.toString("hex");
+      }
+      if (sticker.packKey) {
+        sticker.packKey = sticker.packKey.toString("base64");
+      }
+      if (sticker.data) {
+        sticker.data = this.cleanAttachment(sticker.data);
       }
     }
+
+    return Promise.all(promises).then(() => decrypted);
+    /* eslint-enable no-bitwise, no-param-reassign */
 
     return Promise.all(promises).then(() => decrypted);
     /* eslint-enable no-bitwise, no-param-reassign */
@@ -1363,15 +1468,20 @@ class MessageReceiver extends EventTarget {
   }
 
   stringToArrayBufferBase64(string) {
-    callWorker("stringToArrayBufferBase64", string);
+    // TODO: port to worker_threads since can't pass arrayBuffers to nodejs processes
+    //callWorker("stringToArrayBufferBase64", string);
+    return ByteBuffer.wrap(string, "base64").toArrayBuffer();
   }
 
   arrayBufferToStringBase64(arrayBuffer) {
-    callWorker("arrayBufferToStringBase64", new Uint8Array(arrayBuffer));
+    // TODO: port to worker_threads since can't pass arrayBuffers to nodejs processes
+    //callWorker("arrayBufferToStringBase64", arrayBuffer);
+    return ByteBuffer.wrap(new Uint8Array(arrayBuffer)).toString("base64");
   }
 }
 
-exports = module.exports = WebAPI => {
+exports = module.exports = (WebAPI, serverTrustRoot) => {
   MessageReceiver.WebAPI = WebAPI;
+  MessageReceiver.serverTrustRoot = crypto.base64ToArrayBuffer(serverTrustRoot);
   return MessageReceiver;
 };

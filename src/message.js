@@ -1,3 +1,4 @@
+const ByteBuffer = require("bytebuffer");
 const protobuf = require("./protobufs.js");
 const DataMessage = protobuf.lookupType("signalservice.DataMessage");
 const GroupContext = protobuf.lookupType("signalservice.DataMessage");
@@ -15,25 +16,35 @@ function stringToArrayBuffer(str) {
   }
   return res;
 }
+function hexStringToArrayBuffer(string) {
+  return ByteBuffer.wrap(string, "hex")
+    .toByteBuffer.wrap(string, "base64")
+    .toArrayBuffer();
+}
+function base64ToArrayBuffer(string) {
+  return ByteBuffer.wrap(string, "base64").toArrayBuffer();
+}
 
 class Message {
   constructor(options) {
-    this.body = options.body;
     this.attachments = options.attachments || [];
-    this.quote = options.quote;
-    this.group = options.group;
-    this.flags = options.flags;
-    this.recipients = options.recipients;
-    this.timestamp = options.timestamp;
-    this.needsSync = options.needsSync;
+    this.body = options.body;
     this.expireTimer = options.expireTimer;
+    this.flags = options.flags;
+    this.group = options.group;
+    this.needsSync = options.needsSync;
+    this.preview = options.preview;
     this.profileKey = options.profileKey;
+    this.quote = options.quote;
+    this.recipients = options.recipients;
+    this.sticker = options.sticker;
+    this.timestamp = options.timestamp;
 
-    if (!(this.recipients instanceof Array) || this.recipients.length < 1) {
+    if (!(this.recipients instanceof Array)) {
       throw new Error("Invalid recipient list");
     }
 
-    if (!this.group && this.recipients.length > 1) {
+    if (!this.group && this.recipients.length !== 1) {
       throw new Error("Invalid recipient list for non-group");
     }
 
@@ -95,10 +106,13 @@ class Message {
       return this.dataMessage;
     }
     const proto = DataMessage.create({});
+
+    proto.timestamp = this.timestamp;
+    proto.attachments = this.attachmentPointers;
+
     if (this.body) {
       proto.body = this.body;
     }
-    proto.attachments = this.attachmentPointers;
     if (this.flags) {
       proto.flags = this.flags;
     }
@@ -106,6 +120,25 @@ class Message {
       proto.group = new GroupContext();
       proto.group.id = stringToArrayBuffer(this.group.id);
       proto.group.type = this.group.type;
+    }
+    if (this.sticker) {
+      proto.sticker = new DataMessage.Sticker();
+      proto.sticker.packId = hexStringToArrayBuffer(this.sticker.packId);
+      proto.sticker.packKey = base64ToArrayBuffer(this.sticker.packKey);
+      proto.sticker.stickerId = this.sticker.stickerId;
+
+      if (this.sticker.attachmentPointer) {
+        proto.sticker.data = this.sticker.attachmentPointer;
+      }
+    }
+    if (Array.isArray(this.preview)) {
+      proto.preview = this.preview.map(preview => {
+        const item = new DataMessage.Preview();
+        item.title = preview.title;
+        item.url = preview.url;
+        item.image = preview.image || null;
+        return item;
+      });
     }
     if (this.quote) {
       const { QuotedAttachment } = DataMessage.Quote;

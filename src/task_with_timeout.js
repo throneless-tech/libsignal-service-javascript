@@ -1,4 +1,5 @@
 /* eslint-disable more/no-then */
+const debug = require("debug")("libsignal-service:TaskWithTimeout");
 
 // eslint-disable-next-line func-names
 exports = module.exports = (task, id, options = {}) => {
@@ -15,7 +16,7 @@ exports = module.exports = (task, id, options = {}) => {
             errorForStack.stack
           }`;
 
-          console.error(message);
+          debug(message);
           return reject(new Error(message));
         }
 
@@ -29,7 +30,7 @@ exports = module.exports = (task, id, options = {}) => {
             clearTimeout(localTimer);
           }
         } catch (error) {
-          console.error(
+          debug(
             id || "",
             "task ran into problem canceling timer. Calling stack:",
             errorForStack.stack

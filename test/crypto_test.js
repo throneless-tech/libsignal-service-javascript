@@ -58,11 +58,11 @@ describe("encrypting and decrypting profile data", function() {
     it("throws when decrypting with the wrong key", function() {
       var buffer = ByteBuffer.wrap("This is an avatar").toArrayBuffer();
       var key = crypto.getRandomBytes(32);
-      var bad_key = crypto.getRandomBytes(32);
+      var badKey = crypto.getRandomBytes(32);
 
       return crypto.encryptProfile(buffer, key).then(function(encrypted) {
         assert(encrypted.byteLength === buffer.byteLength + 16 + 12);
-        return crypto.decryptProfile(encrypted, bad_key).catch(function(error) {
+        return crypto.decryptProfile(encrypted, badKey).catch(function(error) {
           assert.strictEqual(error.name, "ProfileDecryptError");
         });
       });

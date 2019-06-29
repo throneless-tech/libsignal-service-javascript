@@ -1,34 +1,47 @@
 "use strict";
-var assert = require("chai").assert;
-var api = require("../src/index.js");
-var ProtocolStore = require("./InMemorySignalProtocolStore.js");
+const assert = require("chai").assert;
+const api = require("../src/index.js");
+const ProtocolStore = require("./InMemorySignalProtocolStore.js");
 var protocolStore = new ProtocolStore();
-var USERNAME = "+15555555";
-var PASSWORD = "password";
+const USERNAME = "+15555555";
+const PASSWORD = "password";
 
-describe("AccountManager", function() {
-  let accountManager;
-
-  beforeEach(function() {
-    accountManager = new api.AccountManager(USERNAME, PASSWORD, protocolStore);
-  });
-
-  describe("#cleanSignedPreKeys", function() {
-    let originalProtocolStorage;
+describe("AccountManager", () => {
+  describe("#cleanSignedPreKeys", async () => {
     let signedPreKeys;
+    let identityKey = await api.KeyHelper.generateIdentityKeyPair();
+    protocolStore = {
+      getIdentityKeyPair() {
+        return identityKey;
+      },
+      loadSignedPreKeys() {
+        return Promise.resolve(signedPreKeys);
+      }
+    };
+    let accountManager = new api.AccountManager(
+      USERNAME,
+      PASSWORD,
+      protocolStore
+    );
     const DAY = 1000 * 60 * 60 * 24;
 
-    beforeEach(function() {
-      originalProtocolStorage = protocolStore;
-      protocolStore.loadSignedPreKeys = function() {
-        return Promise.resolve(signedPreKeys);
-      };
-    });
-    afterEach(function() {
-      protocolStore = originalProtocolStorage;
+    describe("encrypted device name", () => {
+      it("roundtrips", async () => {
+        const deviceName = "v2.5.0 on Ubunto 20.04";
+        const encrypted = await accountManager.encryptDeviceName(deviceName);
+        assert.strictEqual(typeof encrypted, "string");
+        const decrypted = await accountManager.decryptDeviceName(encrypted);
+
+        assert.strictEqual(decrypted, deviceName);
+      });
+
+      it("handles null deviceName", async () => {
+        const encrypted = await accountManager.encryptDeviceName(null);
+        assert.strictEqual(encrypted, null);
+      });
     });
 
-    it("keeps three confirmed keys even if over a week old", function() {
+    it("keeps three confirmed keys even if over a week old", () => {
       const now = Date.now();
       signedPreKeys = [
         {
@@ -52,7 +65,7 @@ describe("AccountManager", function() {
       return accountManager.cleanSignedPreKeys();
     });
 
-    it("eliminates confirmed keys over a week old, if more than three", function() {
+    it("eliminates confirmed keys over a week old, if more than three", async () => {
       const now = Date.now();
       signedPreKeys = [
         {
@@ -83,20 +96,19 @@ describe("AccountManager", function() {
       ];
 
       let count = 0;
-      accountManager.store.removeSignedPreKey = function(keyId) {
+      protocolStore.removeSignedPreKey = keyId => {
         if (keyId !== 1 && keyId !== 4) {
-          throw new Error("Wrong keys were eliminated! " + keyId);
+          throw new Error(`Wrong keys were eliminated! ${keyId}`);
         }
 
-        count++;
+        count += 1;
       };
 
-      return accountManager.cleanSignedPreKeys().then(function() {
-        assert.strictEqual(count, 2);
-      });
+      await accountManager.cleanSignedPreKeys();
+      assert.strictEqual(count, 2);
     });
 
-    it("keeps at least three unconfirmed keys if no confirmed", function() {
+    it("keeps at least three unconfirmed keys if no confirmed", async () => {
       const now = Date.now();
       signedPreKeys = [
         {
@@ -118,20 +130,19 @@ describe("AccountManager", function() {
       ];
 
       let count = 0;
-      protocolStore.removeSignedPreKey = function(keyId) {
+      protocolStore.removeSignedPreKey = keyId => {
         if (keyId !== 2) {
-          throw new Error("Wrong keys were eliminated! " + keyId);
+          throw new Error(`Wrong keys were eliminated! ${keyId}`);
         }
 
-        count++;
+        count += 1;
       };
 
-      return accountManager.cleanSignedPreKeys().then(function() {
-        assert.strictEqual(count, 1);
-      });
+      await accountManager.cleanSignedPreKeys();
+      assert.strictEqual(count, 1);
     });
 
-    it("if some confirmed keys, keeps unconfirmed to addd up to three total", function() {
+    it("if some confirmed keys, keeps unconfirmed to addd up to three total", async () => {
       const now = Date.now();
       signedPreKeys = [
         {
@@ -155,17 +166,16 @@ describe("AccountManager", function() {
       ];
 
       let count = 0;
-      protocolStore.removeSignedPreKey = function(keyId) {
+      protocolStore.removeSignedPreKey = keyId => {
         if (keyId !== 3) {
-          throw new Error("Wrong keys were eliminated! " + keyId);
+          throw new Error(`Wrong keys were eliminated! ${keyId}`);
         }
 
-        count++;
+        count += 1;
       };
 
-      return accountManager.cleanSignedPreKeys().then(function() {
-        assert.strictEqual(count, 1);
-      });
+      await accountManager.cleanSignedPreKeys();
+      assert.strictEqual(count, 1);
     });
   });
 });

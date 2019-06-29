@@ -14,7 +14,7 @@ describe("ContactBuffer", function() {
     var buffer = new ByteBuffer();
     var avatarBuffer = new ByteBuffer();
     var avatarLen = 255;
-    for (var i = 0; i < avatarLen; ++i) {
+    for (var i = 0; i < avatarLen; i += 1) {
       avatarBuffer.writeUint8(i);
     }
     avatarBuffer.limit = avatarBuffer.offset;
@@ -26,7 +26,7 @@ describe("ContactBuffer", function() {
     });
     var contactInfoBuffer = ContactDetails.encode(contactInfo).finish();
 
-    for (var i = 0; i < 3; ++i) {
+    for (var i = 0; i < 3; i += 1) {
       buffer.writeVarint32(contactInfoBuffer.byteLength);
       buffer.append(contactInfoBuffer);
       buffer.append(avatarBuffer.clone());
@@ -43,14 +43,14 @@ describe("ContactBuffer", function() {
     var contact = contactBuffer.next();
     var count = 0;
     while (contact !== undefined) {
-      count++;
+      count += 1;
       assert.strictEqual(contact.name, "Zero Cool");
       assert.strictEqual(contact.number, "+10000000000");
       assert.strictEqual(contact.avatar.contentType, "image/jpeg");
       assert.strictEqual(contact.avatar.length, 255);
       assert.strictEqual(contact.avatar.data.byteLength, 255);
       var avatarBytes = new Uint8Array(contact.avatar.data);
-      for (var j = 0; j < 255; ++j) {
+      for (var j = 0; j < 255; j += 1) {
         assert.strictEqual(avatarBytes[j], j);
       }
       contact = contactBuffer.next();
@@ -64,7 +64,7 @@ describe("GroupBuffer", function() {
     var buffer = new ByteBuffer();
     var avatarBuffer = new ByteBuffer();
     var avatarLen = 255;
-    for (var i = 0; i < avatarLen; ++i) {
+    for (var i = 0; i < avatarLen; i += 1) {
       avatarBuffer.writeUint8(i);
     }
     avatarBuffer.limit = avatarBuffer.offset;
@@ -77,7 +77,7 @@ describe("GroupBuffer", function() {
     });
     var groupInfoBuffer = GroupDetails.encode(groupInfo).finish();
 
-    for (var i = 0; i < 3; ++i) {
+    for (var i = 0; i < 3; i += 1) {
       buffer.writeVarint32(groupInfoBuffer.byteLength);
       buffer.append(groupInfoBuffer);
       buffer.append(avatarBuffer.clone());
@@ -94,7 +94,7 @@ describe("GroupBuffer", function() {
     var group = groupBuffer.next();
     var count = 0;
     while (group !== undefined) {
-      count++;
+      count += 1;
       assert.strictEqual(group.name, "Hackers");
       assert.sameMembers(group.members, ["cereal", "burn", "phreak", "joey"]);
       assert.strictEqual(group.avatar.contentType, "image/jpeg");
@@ -102,7 +102,7 @@ describe("GroupBuffer", function() {
       assert.strictEqual(group.avatar.data.byteLength, 255);
       assertEqualArrayBuffers(group.id, new Uint8Array([1, 3, 3, 7]).buffer);
       var avatarBytes = new Uint8Array(group.avatar.data);
-      for (var j = 0; j < 255; ++j) {
+      for (var j = 0; j < 255; j += 1) {
         assert.strictEqual(avatarBytes[j], j);
       }
       group = groupBuffer.next();

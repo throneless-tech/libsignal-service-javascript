@@ -2,6 +2,7 @@
  * vim: ts=2:sw=2:expandtab
  */
 
+const debug = require("debug")("libsignal-service:ProtoParser");
 const ByteBuffer = require("bytebuffer");
 const protobuf = require("./protobufs.js");
 const ContactDetails = protobuf.lookupType("signalservice.ContactDetails");
@@ -44,7 +45,7 @@ class ProtoParser {
 
       return proto;
     } catch (error) {
-      console.error(
+      debug(
         "ProtoParser.next error:",
         error && error.stack ? error.stack : error
       );

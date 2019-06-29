@@ -14,13 +14,16 @@ const WebAPI = require("./web_api.js").initialize({
   url: config.get("serverUrl"),
   cdnUrl: config.get("cdnUrl"),
   certificateAuthority: config.get("certificateAuthority"),
+  contentProxyUrl: config.get("contentProxyUrl"),
   proxyUrl: proxyUrl
 });
 exports = module.exports = {};
 exports.AccountManager = require("./account_manager.js")(WebAPI);
-exports.MessageReceiver = require("./message_receiver.js")(WebAPI);
+exports.MessageReceiver = require("./message_receiver.js")(
+  WebAPI,
+  config.get("serverTrustRoot")
+);
 exports.MessageSender = require("./sendmessage.js")(WebAPI);
-exports.SyncRequest = require("./sync_request.js");
 exports.KeyHelper = require("@throneless/libsignal-protocol").KeyHelper;
 exports.KeyHelper.getRandomBytes = require("./crypto.js").getRandomBytes;
 exports.KeyHelper.generatePassword = function() {

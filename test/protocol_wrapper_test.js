@@ -1,22 +1,20 @@
 "use strict";
-var assert = require("assert");
-var ProtocolStore = require("./InMemorySignalProtocolStore.js");
+const assert = require("assert");
+const ProtocolStore = require("./InMemorySignalProtocolStore.js");
 var protocolStore = new ProtocolStore();
-var api = require("../src/index.js");
-var libsignal = require("@throneless/libsignal-protocol");
+const api = require("../src/index.js");
+const libsignal = require("@throneless/libsignal-protocol");
 
-describe("Protocol Wrapper", function() {
-  var identifier = "+5558675309";
-  var another_identifier = "+5555590210";
-  var prekeys, identityKey, testKey;
+describe("Protocol Wrapper", function thisNeeded() {
+  const identifier = "+5558675309";
+
   this.timeout(5000);
-  before(function(done) {
-    //localStorage.clear();
+
+  before(done => {
+    protocolStore.clear();
     api.KeyHelper.generateIdentityKeyPair()
-      .then(function(identityKey) {
-        return protocolStore.saveIdentity(identifier, identityKey.pubKey);
-      })
-      .then(function() {
+      .then(key => protocolStore.saveIdentity(identifier, key.pubKey))
+      .then(() => {
         done();
       });
   });
@@ -29,10 +27,10 @@ describe("Protocol Wrapper", function() {
           identityKey: api.KeyHelper.getRandomBytes(33),
           encodedNumber: address.toString()
         })
-        .then(function() {
+        .then(() => {
           throw new Error("Allowed to overwrite identity key");
         })
-        .catch(function(e) {
+        .catch(e => {
           assert.strictEqual(e.message, "Identity key changed");
         });
     });

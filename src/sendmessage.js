@@ -1,25 +1,31 @@
 /*
  * vim: ts=2:sw=2:expandtab
  */
-var libsignal = require("@throneless/libsignal-protocol");
-var crypto = require("./crypto.js");
-var errors = require("./errors.js");
-var OutgoingMessage = require("./outgoing_message.js");
-var createTaskWithTimeout = require("./task_with_timeout.js");
-var Message = require("./message.js");
-var protobuf = require("./protobufs.js");
-var AttachmentPointer = protobuf.lookupType("signalservice.AttachmentPointer");
-var Content = protobuf.lookupType("signalservice.Content");
-var DataMessage = protobuf.lookupType("signalservice.DataMessage");
-var GroupContext = protobuf.lookupType("signalservice.GroupContext");
-var NullMessage = protobuf.lookupType("signalservice.NullMessage");
-var ReceiptMessage = protobuf.lookupType("signalservice.ReceiptMessage");
-var SyncMessageRequest = protobuf.lookupType(
+const debug = require("debug")("libsignal-service:SendMessage");
+const libsignal = require("@throneless/libsignal-protocol");
+const crypto = require("./crypto.js");
+const errors = require("./errors.js");
+const OutgoingMessage = require("./outgoing_message.js");
+const createTaskWithTimeout = require("./task_with_timeout.js");
+const Message = require("./message.js");
+const protobuf = require("./protobufs.js");
+const AttachmentPointer = protobuf.lookupType(
+  "signalservice.AttachmentPointer"
+);
+const Content = protobuf.lookupType("signalservice.Content");
+const DataMessage = protobuf.lookupType("signalservice.DataMessage");
+const GroupContext = protobuf.lookupType("signalservice.GroupContext");
+const NullMessage = protobuf.lookupType("signalservice.NullMessage");
+const ReceiptMessage = protobuf.lookupType("signalservice.ReceiptMessage");
+const SyncMessageRequest = protobuf.lookupType(
   "signalservice.SyncMessage.Request"
 );
-var SyncMessageSent = protobuf.lookupType("signalservice.SyncMessage.Sent");
-var Verified = protobuf.lookupType("signalservice.Verified");
+const SyncMessageSent = protobuf.lookupType("signalservice.SyncMessage.Sent");
+const TypingMessage = protobuf.lookupType("signalservice.TypingMessage");
+const Verified = protobuf.lookupType("signalservice.Verified");
 /* eslint-disable more/no-then, no-bitwise */
+
+const PAD_ALL_ATTACHMENTS = false;
 
 function stringToArrayBuffer(str) {
   if (typeof str !== "string") {
@@ -40,46 +46,73 @@ class MessageSender {
     this.store = store;
   }
 
-  //  makeAttachmentPointer :: Attachment -> Promise AttachmentPointerProto
-  makeAttachmentPointer(attachment) {
+  _getAttachmentSizeBucket(size) {
+    return Math.max(
+      541,
+      Math.floor(1.05 ** Math.ceil(Math.log(size) / Math.log(1.05)))
+    );
+  }
+
+  getPaddedAttachment(data, shouldPad) {
+    if (!PAD_ALL_ATTACHMENTS && !shouldPad) {
+      return data;
+    }
+
+    const size = data.byteLength;
+    const paddedSize = this._getAttachmentSizeBucket(size);
+    const padding = crypto.getZeroes(paddedSize - size);
+
+    return crypto.concatenateBytes(data, padding);
+  }
+
+  async makeAttachmentPointer(attachment, shouldPad = false) {
     if (typeof attachment !== "object" || attachment == null) {
       return Promise.resolve(undefined);
     }
 
-    if (
-      !(attachment.data instanceof ArrayBuffer) &&
-      !ArrayBuffer.isView(attachment.data)
-    ) {
-      return Promise.reject(
-        new TypeError(
-          `\`attachment.data\` must be an \`ArrayBuffer\` or \`ArrayBufferView\`; got: ${typeof attachment.data}`
-        )
+    const { data, size } = attachment;
+    if (!(data instanceof ArrayBuffer) && !ArrayBuffer.isView(data)) {
+      throw new Error(
+        `makeAttachmentPointer: data was a '${typeof data}' instead of ArrayBuffer/ArrayBufferView`
+      );
+    }
+    if (data.byteLength !== size) {
+      throw new Error(
+        `makeAttachmentPointer: Size ${size} did not match data.byteLength ${data.byteLength}`
       );
     }
 
-    const proto = new AttachmentPointer();
-    proto.key = libsignal.crypto.getRandomBytes(64);
-
+    const padded = this.getPaddedAttachment(data, shouldPad);
+    const key = libsignal.crypto.getRandomBytes(64);
     const iv = libsignal.crypto.getRandomBytes(16);
-    return crypto
-      .encryptAttachment(attachment.data, proto.key, iv)
-      .then(result =>
-        this.server.putAttachment(result.ciphertext).then(id => {
-          proto.id = id;
-          proto.contentType = attachment.contentType;
-          proto.digest = result.digest;
-          if (attachment.fileName) {
-            proto.fileName = attachment.fileName;
-          }
-          if (attachment.size) {
-            proto.size = attachment.size;
-          }
-          if (attachment.flags) {
-            proto.flags = attachment.flags;
-          }
-          return proto;
-        })
-      );
+
+    const result = await crypto.encryptAttachment(padded, key, iv);
+    const id = await this.server.putAttachment(result.ciphertext);
+
+    const proto = new AttachmentPointer();
+    proto.id = id;
+    proto.contentType = attachment.contentType;
+    proto.key = key;
+    proto.size = attachment.size;
+    proto.digest = result.digest;
+
+    if (attachment.fileName) {
+      proto.fileName = attachment.fileName;
+    }
+    if (attachment.flags) {
+      proto.flags = attachment.flags;
+    }
+    if (attachment.width) {
+      proto.width = attachment.width;
+    }
+    if (attachment.height) {
+      proto.height = attachment.height;
+    }
+    if (attachment.caption) {
+      proto.caption = attachment.caption;
+    }
+
+    return proto;
   }
 
   retransmitMessage(number, jsonData, timestamp) {
@@ -184,6 +217,51 @@ class MessageSender {
       });
   }
 
+  async uploadLinkPreviews(message) {
+    try {
+      const preview = await Promise.all(
+        (message.preview || []).map(async item => ({
+          ...item,
+          image: await this.makeAttachmentPointer(item.image)
+        }))
+      );
+      // eslint-disable-next-line no-param-reassign
+      message.preview = preview;
+    } catch (error) {
+      if (error instanceof Error && error.name === "HTTPError") {
+        throw new errors.MessageError(message, error);
+      } else {
+        throw error;
+      }
+    }
+  }
+
+  async uploadSticker(message) {
+    try {
+      const { sticker } = message;
+
+      if (!sticker || !sticker.data) {
+        return;
+      }
+
+      const shouldPad = true;
+      // eslint-disable-next-line no-param-reassign
+      message.sticker = {
+        ...sticker,
+        attachmentPointer: await this.makeAttachmentPointer(
+          sticker.data,
+          shouldPad
+        )
+      };
+    } catch (error) {
+      if (error instanceof Error && error.name === "HTTPError") {
+        throw new errors.MessageError(message, error);
+      } else {
+        throw error;
+      }
+    }
+  }
+
   uploadThumbnails(message) {
     const makePointer = this.makeAttachmentPointer.bind(this);
     const { quote } = message;
@@ -213,11 +291,15 @@ class MessageSender {
     });
   }
 
-  sendMessage(attrs) {
+  sendMessage(attrs, options) {
     const message = new Message(attrs);
+    const silent = false;
+
     return Promise.all([
       this.uploadAttachments(message),
-      this.uploadThumbnails(message)
+      this.uploadThumbnails(message),
+      this.uploadLinkPreviews(message),
+      this.uploadSticker(message)
     ]).then(
       () =>
         new Promise((resolve, reject) => {
@@ -232,13 +314,22 @@ class MessageSender {
               } else {
                 resolve(res);
               }
-            }
+            },
+            silent,
+            options
           );
         })
     );
   }
 
-  sendMessageProto(timestamp, numbers, message, callback, silent) {
+  sendMessageProto(
+    timestamp,
+    numbers,
+    message,
+    callback,
+    silent,
+    options = {}
+  ) {
     const rejections = this.store.get("signedKeyRotationRejected", 0);
     if (rejections > 5) {
       throw new errors.SignedPreKeyRotationError(
@@ -255,7 +346,8 @@ class MessageSender {
       numbers,
       message,
       silent,
-      callback
+      callback,
+      options
     );
 
     numbers.forEach(number => {
@@ -263,29 +355,44 @@ class MessageSender {
     });
   }
 
-  retrySendMessageProto(numbers, encodedMessage, timestamp) {
-    const proto = DataMessage.decode(encodedMessage);
+  sendMessageProtoAndWait(timestamp, numbers, message, silent, options = {}) {
     return new Promise((resolve, reject) => {
-      this.sendMessageProto(timestamp, numbers, proto, res => {
-        if (res.errors.length > 0) {
-          reject(res);
-        } else {
-          resolve(res);
+      const callback = result => {
+        if (result && result.errors && result.errors.length > 0) {
+          return reject(result);
         }
-      });
+
+        return resolve(result);
+      };
+
+      this.sendMessageProto(
+        timestamp,
+        numbers,
+        message,
+        callback,
+        silent,
+        options
+      );
     });
   }
 
-  sendIndividualProto(number, proto, timestamp, silent) {
+  sendIndividualProto(number, proto, timestamp, silent, options = {}) {
     return new Promise((resolve, reject) => {
       const callback = res => {
-        if (res.errors.length > 0) {
+        if (res && res.errors && res.errors.length > 0) {
           reject(res);
         } else {
           resolve(res);
         }
       };
-      this.sendMessageProto(timestamp, [number], proto, callback, silent);
+      this.sendMessageProto(
+        timestamp,
+        [number],
+        proto,
+        callback,
+        silent,
+        (options = {})
+      );
     });
   }
 
@@ -306,7 +413,11 @@ class MessageSender {
     encodedDataMessage,
     timestamp,
     destination,
-    expirationStartTimestamp
+    expirationStartTimestamp,
+    sentTo = [],
+    unidentifiedDeliveries = [],
+    isUpdate = false,
+    options
   ) {
     const myNumber = this.store.userGetNumber();
     const myDevice = this.store.userGetDeviceId();
@@ -324,6 +435,31 @@ class MessageSender {
     if (expirationStartTimestamp) {
       sentMessage.expirationStartTimestamp = expirationStartTimestamp;
     }
+
+    const unidentifiedLookup = unidentifiedDeliveries.reduce(
+      (accumulator, item) => {
+        // eslint-disable-next-line no-param-reassign
+        accumulator[item] = true;
+        return accumulator;
+      },
+      Object.create(null)
+    );
+
+    if (isUpdate) {
+      syncMessage.isRecipientUpdate = true;
+    }
+
+    // Though this field has 'unidenified' in the name, it should have entries for each
+    //   number we sent to.
+    if (sentTo && sentTo.length) {
+      sentMessage.unidentifiedStatus = sentTo.map(number => {
+        const status = new SyncMessage.Sent.UnidentifiedDeliveryStatus();
+        status.destination = number;
+        status.unidentified = Boolean(unidentifiedLookup[number]);
+        return status;
+      });
+    }
+
     const syncMessage = this.createSyncMessage();
     syncMessage.sent = sentMessage;
     const contentMessage = new Content();
@@ -333,19 +469,30 @@ class MessageSender {
     return this.sendIndividualProto(
       myNumber,
       contentMessage,
-      Date.now(),
-      silent
+      timestamp,
+      silent,
+      options
     );
   }
 
-  getProfile(number) {
+  async getProfile(number, { accessKey } = {}) {
+    if (accessKey) {
+      return this.server.getProfileUnauth(number, { accessKey });
+    }
+
     return this.server.getProfile(number);
   }
   getAvatar(path) {
     return this.server.getAvatar(path);
   }
+  getSticker(packId, stickerId) {
+    return this.server.getSticker(packId, stickerId);
+  }
+  getStickerPackManifest(packId) {
+    return this.server.getStickerPackManifest(packId);
+  }
 
-  sendRequestConfigurationSyncMessage() {
+  sendRequestConfigurationSyncMessage(options) {
     const myNumber = this.store.userGetNumber();
     const myDevice = this.store.userGetDeviceId();
     if (myDevice !== 1 && myDevice !== "1") {
@@ -361,13 +508,14 @@ class MessageSender {
         myNumber,
         contentMessage,
         Date.now(),
-        silent
+        silent,
+        options
       );
     }
 
     return Promise.resolve();
   }
-  sendRequestGroupSyncMessage() {
+  sendRequestGroupSyncMessage(options) {
     const myNumber = this.store.userGetNumber();
     const myDevice = this.store.userGetDeviceId();
     if (myDevice !== 1 && myDevice !== "1") {
@@ -383,14 +531,15 @@ class MessageSender {
         myNumber,
         contentMessage,
         Date.now(),
-        silent
+        silent,
+        options
       );
     }
 
     return Promise.resolve();
   }
 
-  sendRequestContactSyncMessage() {
+  sendRequestContactSyncMessage(options) {
     const myNumber = this.store.userGetNumber();
     const myDevice = this.store.userGetDeviceId();
     if (myDevice !== 1 && myDevice !== "1") {
@@ -406,13 +555,87 @@ class MessageSender {
         myNumber,
         contentMessage,
         Date.now(),
-        silent
+        silent,
+        options
       );
     }
 
     return Promise.resolve();
   }
-  sendReadReceipts(sender, timestamps) {
+
+  async sendTypingMessage(options = {}, sendOptions = {}) {
+    const ACTION_ENUM = TypingMessage.Action;
+    const { recipientId, groupId, groupNumbers, isTyping, timestamp } = options;
+
+    // We don't want to send typing messages to our other devices, but we will
+    //   in the group case.
+    const myNumber = this.store.userGetNumber();
+    if (recipientId && myNumber === recipientId) {
+      return null;
+    }
+
+    if (!recipientId && !groupId) {
+      throw new Error("Need to provide either recipientId or groupId!");
+    }
+
+    const recipients = groupId
+      ? _.without(groupNumbers, myNumber)
+      : [recipientId];
+    const groupIdBuffer = groupId
+      ? crypto.fromEncodedBinaryToArrayBuffer(groupId)
+      : null;
+
+    const action = isTyping ? ACTION_ENUM.STARTED : ACTION_ENUM.STOPPED;
+    const finalTimestamp = timestamp || Date.now();
+
+    const typingMessage = new TypingMessage();
+    typingMessage.groupId = groupIdBuffer;
+    typingMessage.action = action;
+    typingMessage.timestamp = finalTimestamp;
+
+    const contentMessage = new Content();
+    contentMessage.typingMessage = typingMessage;
+
+    const silent = true;
+    const online = true;
+
+    return this.sendMessageProtoAndWait(
+      finalTimestamp,
+      recipients,
+      contentMessage,
+      silent,
+      {
+        ...sendOptions,
+        online
+      }
+    );
+  }
+
+  sendDeliveryReceipt(recipientId, timestamp, options) {
+    const myNumber = this.store.userGetNumber();
+    const myDevice = this.store.userGetDeviceId();
+    if (myNumber === recipientId && (myDevice === 1 || myDevice === "1")) {
+      return Promise.resolve();
+    }
+
+    const receiptMessage = new ReceiptMessage();
+    receiptMessage.type = ReceiptMessage.Type.DELIVERY;
+    receiptMessage.timestamp = [timestamp];
+
+    const contentMessage = new Content();
+    contentMessage.receiptMessage = receiptMessage;
+
+    const silent = true;
+    return this.sendIndividualProto(
+      recipientId,
+      contentMessage,
+      Date.now(),
+      silent,
+      options
+    );
+  }
+
+  sendReadReceipts(sender, timestamps, options) {
     const receiptMessage = new ReceiptMessage();
     receiptMessage.type = ReceiptMessage.Type.READ;
     receiptMessage.timestamp = timestamps;
@@ -421,9 +644,15 @@ class MessageSender {
     contentMessage.receiptMessage = receiptMessage;
 
     const silent = true;
-    return this.sendIndividualProto(sender, contentMessage, Date.now(), silent);
+    return this.sendIndividualProto(
+      sender,
+      contentMessage,
+      Date.now(),
+      silent,
+      options
+    );
   }
-  syncReadMessages(reads) {
+  syncReadMessages(reads, options) {
     const myNumber = this.store.userGetNumber();
     const myDevice = this.store.userGetDeviceId();
     if (myDevice !== 1 && myDevice !== "1") {
@@ -443,13 +672,49 @@ class MessageSender {
         myNumber,
         contentMessage,
         Date.now(),
-        silent
+        silent,
+        options
       );
     }
 
     return Promise.resolve();
   }
-  syncVerification(destination, state, identityKey) {
+  async sendStickerPackSync(operations, options) {
+    const myDevice = this.store.userGetDeviceId();
+    if (myDevice === 1 || myDevice === "1") {
+      return null;
+    }
+
+    const myNumber = this.store.userGetNumber();
+    const ENUM = SyncMessage.StickerPackOperation.Type;
+
+    const packOperations = operations.map(item => {
+      const { packId, packKey, installed } = item;
+
+      const operation = new SyncMessage.StickerPackOperation();
+      operation.packId = hexStringToArrayBuffer(packId);
+      operation.packKey = base64ToArrayBuffer(packKey);
+      operation.type = installed ? ENUM.INSTALL : ENUM.REMOVE;
+
+      return operation;
+    });
+
+    const syncMessage = this.createSyncMessage();
+    syncMessage.stickerPackOperation = packOperations;
+
+    const contentMessage = new Content();
+    contentMessage.syncMessage = syncMessage;
+
+    const silent = true;
+    return this.sendIndividualProto(
+      myNumber,
+      contentMessage,
+      Date.now(),
+      silent,
+      options
+    );
+  }
+  syncVerification(destination, state, identityKey, options) {
     const myNumber = this.store.userGetNumber();
     const myDevice = this.store.userGetDeviceId();
     const now = Date.now();
@@ -472,7 +737,14 @@ class MessageSender {
     contentMessage.nullMessage = nullMessage;
 
     // We want the NullMessage to look like a normal outgoing message; not silent
-    const promise = this.sendIndividualProto(destination, contentMessage, now);
+    const silent = false;
+    const promise = this.sendIndividualProto(
+      destination,
+      contentMessage,
+      now,
+      silent,
+      options
+    );
 
     return promise.then(() => {
       const verified = new Verified();
@@ -487,16 +759,28 @@ class MessageSender {
       const secondMessage = new Content();
       secondMessage.syncMessage = syncMessage;
 
-      const silent = true;
-      return this.sendIndividualProto(myNumber, secondMessage, now, silent);
+      const innerSilent = true;
+      return this.sendIndividualProto(
+        myNumber,
+        secondMessage,
+        now,
+        innerSilent,
+        options
+      );
     });
   }
 
-  sendGroupProto(providedNumbers, proto, timestamp = Date.now()) {
+  sendGroupProto(providedNumbers, proto, timestamp = Date.now(), options = {}) {
     const me = this.store.userGetNumber();
     const numbers = providedNumbers.filter(number => number !== me);
     if (numbers.length === 0) {
-      return Promise.reject(new Error("No other members in the group"));
+      return Promise.resolve({
+        successfulNumbers: [],
+        failoverNumbers: [],
+        errors: [],
+        unidentifiedDeliveries: [],
+        dataMessage: proto.toArrayBuffer()
+      });
     }
 
     return new Promise((resolve, reject) => {
@@ -510,8 +794,55 @@ class MessageSender {
         }
       };
 
-      this.sendMessageProto(timestamp, numbers, proto, callback, silent);
+      this.sendMessageProto(
+        timestamp,
+        numbers,
+        proto,
+        callback,
+        silent,
+        options
+      );
     });
+  }
+
+  async getMessageProto(
+    number,
+    body,
+    attachments,
+    quote,
+    preview,
+    sticker,
+    timestamp,
+    expireTimer,
+    profileKey,
+    flags
+  ) {
+    const attributes = {
+      recipients: [number],
+      body,
+      timestamp,
+      attachments,
+      quote,
+      preview,
+      sticker,
+      expireTimer,
+      profileKey,
+      flags
+    };
+
+    return this.getMessageProtoObj(attributes);
+  }
+
+  async getMessageProtoObj(attributes) {
+    const message = new Message(attributes);
+    await Promise.all([
+      this.uploadAttachments(message),
+      this.uploadThumbnails(message),
+      this.uploadLinkPreviews(message),
+      this.uploadSticker(message)
+    ]);
+
+    return message.toArrayBuffer();
   }
 
   sendMessageToNumber(
@@ -519,30 +850,38 @@ class MessageSender {
     messageText,
     attachments,
     quote,
+    preview,
+    sticker,
     timestamp,
     expireTimer,
-    profileKey
+    profileKey,
+    options
   ) {
-    return this.sendMessage({
-      recipients: [number],
-      body: messageText,
-      timestamp,
-      attachments,
-      quote,
-      needsSync: true,
-      expireTimer,
-      profileKey
-    });
+    return this.sendMessage(
+      {
+        recipients: [number],
+        body: messageText,
+        timestamp,
+        attachments,
+        quote,
+        preview,
+        sticker,
+        expireTimer,
+        profileKey
+      },
+      options
+    );
   }
 
-  resetSession(number, timestamp) {
-    console.info("resetting secure session");
+  resetSession(number, timestamp, options) {
+    debug("resetting secure session");
+    const silent = false;
     const proto = new DataMessage();
     proto.body = "TERMINATE";
     proto.flags = DataMessage.Flags.END_SESSION;
 
     const logError = prefix => error => {
-      console.error(prefix, error && error.stack ? error.stack : error);
+      debug(prefix, error && error.stack ? error.stack : error);
       throw error;
     };
     const deleteAllSessions = targetNumber =>
@@ -553,7 +892,7 @@ class MessageSender {
               targetNumber,
               deviceId
             );
-            console.info("deleting sessions for", address.toString());
+            debug("deleting sessions for", address.toString());
             const sessionCipher = new libsignal.SessionCipher(
               this.store,
               address
@@ -563,13 +902,17 @@ class MessageSender {
         )
       );
 
-    const sendToContact = deleteAllSessions(number)
+    const sendToContactPromise = deleteAllSessions(number)
       .catch(logError("resetSession/deleteAllSessions1 error:"))
       .then(() => {
-        console.info("finished closing local sessions, now sending to contact");
-        return this.sendIndividualProto(number, proto, timestamp).catch(
-          logError("resetSession/sendToContact error:")
-        );
+        debug("finished closing local sessions, now sending to contact");
+        return this.sendIndividualProto(
+          number,
+          proto,
+          timestamp,
+          silent,
+          options
+        ).catch(logError("resetSession/sendToContact error:"));
       })
       .then(() =>
         deleteAllSessions(number).catch(
@@ -577,104 +920,117 @@ class MessageSender {
         )
       );
 
-    const buffer = proto.toArrayBuffer();
-    const sendSync = this.sendSyncMessage(buffer, timestamp, number).catch(
-      logError("resetSession/sendSync error:")
-    );
+    const myNumber = this.store.userGetNumber();
+    // We already sent the reset session to our other devices in the code above!
+    if (number === myNumber) {
+      return sendToContactPromise;
+    }
 
-    return Promise.all([sendToContact, sendSync]);
+    const buffer = proto.toArrayBuffer();
+    const sendSyncPromise = this.sendSyncMessage(
+      buffer,
+      timestamp,
+      number,
+      null,
+      [],
+      [],
+      options
+    ).catch(logError("resetSession/sendSync error:"));
+
+    return Promise.all([sendToContactPromise, sendSyncPromise]);
   }
 
-  sendMessageToGroup(
+  async sendMessageToGroup(
     groupId,
+    groupNumbers,
     messageText,
     attachments,
     quote,
+    preview,
+    sticker,
     timestamp,
     expireTimer,
-    profileKey
+    profileKey,
+    options
   ) {
-    return this.store.groupsGetNumbers(groupId).then(targetNumbers => {
-      if (targetNumbers === undefined) {
-        return Promise.reject(new Error("Unknown Group"));
+    const me = this.store.userGetNumber();
+    const numbers = groupNumbers.filter(number => number !== me);
+    const attrs = {
+      recipients: numbers,
+      body: messageText,
+      timestamp,
+      attachments,
+      quote,
+      preview,
+      sticker,
+      expireTimer,
+      profileKey,
+      group: {
+        id: groupId,
+        type: GroupContext.Type.DELIVER
       }
+    };
 
-      const me = this.store.userGetNumber();
-      const numbers = targetNumbers.filter(number => number !== me);
-      if (numbers.length === 0) {
-        return Promise.reject(new Error("No other members in the group"));
-      }
-
-      return this.sendMessage({
-        recipients: numbers,
-        body: messageText,
-        timestamp,
-        attachments,
-        quote,
-        needsSync: true,
-        expireTimer,
-        profileKey,
-        group: {
-          id: groupId,
-          type: GroupContext.Type.DELIVER
-        }
+    if (numbers.length === 0) {
+      return Promise.resolve({
+        successfulNumbers: [],
+        failoverNumbers: [],
+        errors: [],
+        unidentifiedDeliveries: [],
+        dataMessage: await this.getMessageProtoObj(attrs)
       });
-    });
+    }
+
+    return this.sendMessage(attrs, options);
   }
 
-  createGroup(targetNumbers, name, avatar) {
+  createGroup(targetNumbers, id, name, avatar, options) {
     const proto = new DataMessage();
     proto.group = new GroupContext();
+    proto.group.id = stringToArrayBuffer(id);
 
-    return this.store.groupsCreateNewGroup(targetNumbers).then(group => {
-      proto.group.id = stringToArrayBuffer(group.id);
-      const { numbers } = group;
+    proto.group.type = GroupContext.Type.UPDATE;
+    proto.group.members = numbers;
+    proto.group.name = name;
 
-      proto.group.type = GroupContext.Type.UPDATE;
-      proto.group.members = numbers;
-      proto.group.name = name;
-
-      return this.makeAttachmentPointer(avatar).then(attachment => {
-        proto.group.avatar = attachment;
-        return this.sendGroupProto(numbers, proto).then(() => proto.group.id);
-      });
+    return this.makeAttachmentPointer(avatar).then(attachment => {
+      proto.group.avatar = attachment;
+      return this.sendGroupProto(
+        targetNumbers,
+        proto,
+        Date.now(),
+        options
+      ).then(() => proto.group.id);
     });
   }
 
-  updateGroup(groupId, name, avatar, targetNumbers) {
+  updateGroup(groupId, name, avatar, targetNumbers, options) {
     const proto = new DataMessage();
     proto.group = new GroupContext();
 
     proto.group.id = stringToArrayBuffer(groupId);
     proto.group.type = GroupContext.Type.UPDATE;
     proto.group.name = name;
+    proto.group.members = targetNumbers;
 
-    return this.store.groupsAddNumbers(groupId, targetNumbers).then(numbers => {
-      if (numbers === undefined) {
-        return Promise.reject(new Error("Unknown Group"));
-      }
-      proto.group.members = numbers;
-
-      return this.makeAttachmentPointer(avatar).then(attachment => {
-        proto.group.avatar = attachment;
-        return this.sendGroupProto(numbers, proto).then(() => proto.group.id);
-      });
+    return this.makeAttachmentPointer(avatar).then(attachment => {
+      proto.group.avatar = attachment;
+      return this.sendGroupProto(
+        targetNumbers,
+        proto,
+        Date.now(),
+        options
+      ).then(() => proto.group.id);
     });
   }
 
-  addNumberToGroup(groupId, number) {
+  addNumberToGroup(groupId, newNumber, options) {
     const proto = new DataMessage();
     proto.group = new GroupContext();
     proto.group.id = stringToArrayBuffer(groupId);
     proto.group.type = GroupContext.Type.UPDATE;
-
-    return this.store.groupsAddNumbers(groupId, [number]).then(numbers => {
-      if (numbers === undefined)
-        return Promise.reject(new Error("Unknown Group"));
-      proto.group.members = numbers;
-
-      return this.sendGroupProto(numbers, proto);
-    });
+    proto.group.members = newNumbers;
+    return this.sendGroupProto(newNumbers, proto, Date.now(), options);
   }
 
   setGroupName(groupId, name) {
@@ -683,93 +1039,85 @@ class MessageSender {
     proto.group.id = stringToArrayBuffer(groupId);
     proto.group.type = GroupContext.Type.UPDATE;
     proto.group.name = name;
-
-    return this.store.groupsGetNumbers(groupId).then(numbers => {
-      if (numbers === undefined)
-        return Promise.reject(new Error("Unknown Group"));
-      proto.group.members = numbers;
-
-      return this.sendGroupProto(numbers, proto);
-    });
+    proto.group.members = groupNumbers;
+    return this.sendGroupProto(groupNumbers, proto, Date.now(), options);
   }
 
-  setGroupAvatar(groupId, avatar) {
+  setGroupAvatar(groupId, avatar, groupNumbers, options) {
     const proto = new DataMessage();
     proto.group = new GroupContext();
     proto.group.id = stringToArrayBuffer(groupId);
     proto.group.type = GroupContext.Type.UPDATE;
-
-    return this.store.groupsGetNumbers(groupId).then(numbers => {
-      if (numbers === undefined)
-        return Promise.reject(new Error("Unknown Group"));
-      proto.group.members = numbers;
-
-      return this.makeAttachmentPointer(avatar).then(attachment => {
-        proto.group.avatar = attachment;
-        return this.sendGroupProto(numbers, proto);
-      });
+    proto.group.members = groupNumbers;
+    return this.makeAttachmentPointer(avatar).then(attachment => {
+      proto.group.avatar = attachment;
+      return this.sendGroupProto(groupNumbers, proto, Date.now(), options);
     });
   }
 
-  leaveGroup(groupId) {
+  leaveGroup(groupId, groupNumbers, options) {
     const proto = new DataMessage();
     proto.group = new GroupContext();
     proto.group.id = stringToArrayBuffer(groupId);
     proto.group.type = GroupContext.Type.QUIT;
-
-    return this.store.groupsGetNumbers(groupId).then(numbers => {
-      if (numbers === undefined)
-        return Promise.reject(new Error("Unknown Group"));
-      return this.store
-        .groupsDeleteGroup(groupId)
-        .then(() => this.sendGroupProto(numbers, proto));
-    });
+    return this.sendGroupProto(groupNumbers, proto, Date.now(), options);
   }
 
-  sendExpirationTimerUpdateToGroup(
+  async sendExpirationTimerUpdateToGroup(
     groupId,
+    groupNumbers,
     expireTimer,
     timestamp,
-    profileKey
+    profileKey,
+    options
   ) {
-    return this.store.groupsGetNumbers(groupId).then(targetNumbers => {
-      if (targetNumbers === undefined)
-        return Promise.reject(new Error("Unknown Group"));
-
-      const me = this.store.userGetNumber();
-      const numbers = targetNumbers.filter(number => number !== me);
-      if (numbers.length === 0) {
-        return Promise.reject(new Error("No other members in the group"));
+    const me = this.store.userGetNumber();
+    const numbers = groupNumbers.filter(number => number !== me);
+    const attrs = {
+      recipients: numbers,
+      timestamp,
+      expireTimer,
+      profileKey,
+      flags: DataMessage.Flags.EXPIRATION_TIMER_UPDATE,
+      group: {
+        id: groupId,
+        type: GroupContext.Type.DELIVER
       }
-      return this.sendMessage({
-        recipients: numbers,
-        timestamp,
-        needsSync: true,
-        expireTimer,
-        profileKey,
-        flags: DataMessage.Flags.EXPIRATION_TIMER_UPDATE,
-        group: {
-          id: groupId,
-          type: GroupContext.Type.DELIVER
-        }
+    };
+
+    if (numbers.length === 0) {
+      return Promise.resolve({
+        successfulNumbers: [],
+        failoverNumbers: [],
+        errors: [],
+        unidentifiedDeliveries: [],
+        dataMessage: await this.getMessageProtoObj(attrs)
       });
-    });
+    }
+
+    return this.sendMessage(attrs, options);
   }
 
   sendExpirationTimerUpdateToNumber(
     number,
     expireTimer,
     timestamp,
-    profileKey
+    profileKey,
+    options
   ) {
-    return this.sendMessage({
-      recipients: [number],
-      timestamp,
-      needsSync: true,
-      expireTimer,
-      profileKey,
-      flags: DataMessage.Flags.EXPIRATION_TIMER_UPDATE
-    });
+    return this.sendMessage(
+      {
+        recipients: [number],
+        timestamp,
+        expireTimer,
+        profileKey,
+        flags: DataMessage.Flags.EXPIRATION_TIMER_UPDATE
+      },
+      options
+    );
+  }
+  makeProxiedRequest(url, options) {
+    return this.server.makeProxiedRequest(url, options);
   }
 }
 

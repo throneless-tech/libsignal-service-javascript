@@ -18,7 +18,6 @@ describe("Helpers", function() {
 
   describe("stringToArrayBuffer", function() {
     it("returns ArrayBuffer when passed string", function() {
-      var StaticArrayBufferProto = new ArrayBuffer().__proto__;
       var anArrayBuffer = new ArrayBuffer(1);
       var typedArray = new Uint8Array(anArrayBuffer);
       typedArray[0] = "a".charCodeAt(0);

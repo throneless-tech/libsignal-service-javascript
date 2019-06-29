@@ -1,5 +1,6 @@
 "use strict";
 const assert = require("chai").assert;
+const Blob = require("node-blob");
 const ByteBuffer = require("bytebuffer");
 const MockServer = require("mock-socket").Server;
 const crypto = require("../src/crypto.js");
@@ -24,7 +25,6 @@ describe("MessageReceiver", () => {
   });
 
   describe("connecting", () => {
-    const blob = null;
     const attrs = {
       type: Envelope.Type.CIPHERTEXT,
       source: number,
@@ -39,14 +39,12 @@ describe("MessageReceiver", () => {
     before(done => {
       let signal = Envelope.create(attrs);
       signal = Envelope.encode(signal).finish();
-      const data = DataMessage.create({ body: "hello" });
 
-      const signaling_key = signalingKey;
-      const aes_key = signaling_key.slice(0, 32);
-      const mac_key = signaling_key.slice(32, 32 + 20);
+      const aesKey = signalingKey.slice(0, 32);
+      const macKey = signalingKey.slice(32, 32 + 20);
 
       webcrypto.subtle
-        .importKey("raw", aes_key, { name: "AES-CBC" }, false, ["encrypt"])
+        .importKey("raw", aesKey, { name: "AES-CBC" }, false, ["encrypt"])
         .then(key => {
           const iv = crypto.getRandomBytes(16);
           webcrypto.subtle
@@ -55,14 +53,14 @@ describe("MessageReceiver", () => {
               webcrypto.subtle
                 .importKey(
                   "raw",
-                  mac_key,
+                  macKey,
                   { name: "HMAC", hash: { name: "SHA-256" } },
                   false,
                   ["sign"]
                 )
-                .then(key => {
+                .then(innerKey => {
                   webcrypto.subtle
-                    .sign({ name: "HMAC", hash: "SHA-256" }, key, signal)
+                    .sign({ name: "HMAC", hash: "SHA-256" }, innerKey, signal)
                     .then(mac => {
                       const version = new Uint8Array([1]);
                       const message = ByteBuffer.concat([
@@ -98,11 +96,14 @@ describe("MessageReceiver", () => {
       );
       messageReceiver.addEventListener("textsecure:message", ev => {
         const signal = ev.proto;
-        for (const key in attrs) {
+        const keys = Object.keys(attrs);
+
+        for (let i = 0, max = keys.length; i < max; i += 1) {
+          const key = keys[i];
           assert.strictEqual(attrs[key], signal[key]);
         }
         assert.strictEqual(signal.message.body, "hello");
-        server.close();
+        mockServer.close();
         done();
       });
     });

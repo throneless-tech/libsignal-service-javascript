@@ -1,13 +1,17 @@
 const WebSocket = require("websocket").w3cwebsocket;
+const debug = require("debug")("libsignal-service:WebAPI");
 const fetch = require("node-fetch");
-var https = require("https");
 const ProxyAgent = require("proxy-agent");
+const { Agent } = require("https");
 
 const is = require("@sindresorhus/is");
+//const { redactPackId } = require("./stickers");
 
-/* global Buffer: false */
-/* global setTimeout: false */
-/* global log: false */
+function redactPackId(packId) {
+  return `[REDACTED]${packId.slice(-3)}`;
+}
+
+/* global Signal, Buffer, setTimeout, log, _, getGuid */
 
 /* eslint-disable more/no-then, no-bitwise, no-nested-ternary */
 
@@ -42,14 +46,14 @@ function _b64ToUint6(nChr) {
   return nChr > 64 && nChr < 91
     ? nChr - 65
     : nChr > 96 && nChr < 123
-      ? nChr - 71
-      : nChr > 47 && nChr < 58
-        ? nChr + 4
-        : nChr === 43
-          ? 62
-          : nChr === 47
-            ? 63
-            : 0;
+    ? nChr - 71
+    : nChr > 47 && nChr < 58
+    ? nChr + 4
+    : nChr === 43
+    ? 62
+    : nChr === 47
+    ? 63
+    : 0;
 }
 
 function _getStringable(thing) {
@@ -81,6 +85,8 @@ function _ensureStringed(thing) {
     return res;
   } else if (thing === null) {
     return null;
+  } else if (thing === undefined) {
+    return undefined;
   }
   throw new Error(`unsure of how to jsonify object of type ${typeof thing}`);
 }
@@ -158,27 +164,61 @@ function _createSocket(url, { certificateAuthority, proxyUrl }) {
   return new WebSocket(url, null, null, null, requestOptions);
 }
 
+const FIVE_MINUTES = 1000 * 60 * 5;
+const agents = {
+  unauth: null,
+  auth: null
+};
+
+function getContentType(response) {
+  if (response.headers && response.headers.get) {
+    return response.headers.get("content-type");
+  }
+
+  return null;
+}
+
 function _promiseAjax(providedUrl, options) {
   return new Promise((resolve, reject) => {
     const url = providedUrl || `${options.host}/${options.path}`;
-    console.info(options.type, url);
+
+    const unauthLabel = options.unauthenticated ? " (unauth)" : "";
+    if (options.redactUrl) {
+      debug(`${options.type} ${options.redactUrl(url)}${unauthLabel}`);
+    } else {
+      debug(`${options.type} ${url}${unauthLabel}`);
+    }
+
     const timeout =
       typeof options.timeout !== "undefined" ? options.timeout : 10000;
 
     const { proxyUrl } = options;
-    let agent;
-    if (proxyUrl) {
-      agent = new ProxyAgent(proxyUrl);
+    const agentType = options.unauthenticated ? "unauth" : "auth";
+    const cacheKey = `${proxyUrl}-${agentType}`;
+
+    const { timestamp } = agents[cacheKey] || {};
+    if (!timestamp || timestamp + FIVE_MINUTES < Date.now()) {
+      if (timestamp) {
+        debug(`Cycling agent for type ${cacheKey}`);
+      }
+      agents[cacheKey] = {
+        agent: proxyUrl
+          ? new ProxyAgent(proxyUrl)
+          : new Agent({ keepAlive: true, ca: options.certificateAuthority }),
+        timestamp: Date.now()
+      };
     }
-    const httpsOptions = {
-      ca: options.certificateAuthority
-    };
-    agent = new https.Agent(httpsOptions);
+    const { agent } = agents[cacheKey];
 
     const fetchOptions = {
       method: options.type,
       body: options.data || null,
-      headers: { "X-Signal-Agent": "OWD" },
+      headers: {
+        "User-Agent": "Signal Desktop (+https://signal.org/download)",
+        "X-Signal-Agent": "OWD",
+        ...options.headers
+      },
+      redirect: options.redirect,
       agent,
       ca: options.certificateAuthority,
       timeout
@@ -193,15 +233,26 @@ function _promiseAjax(providedUrl, options) {
       fetchOptions.headers["Content-Length"] = contentLength;
     }
 
-    if (options.user && options.password) {
+    const { accessKey, unauthenticated } = options;
+    if (unauthenticated) {
+      if (!accessKey) {
+        throw new Error(
+          "_promiseAjax: mode is aunathenticated, but accessKey was not provided"
+        );
+      }
+      // Access key is already a Base64 string
+      fetchOptions.headers["Unidentified-Access-Key"] = accessKey;
+    } else if (options.user && options.password) {
       const user = _getString(options.user);
       const password = _getString(options.password);
       const auth = _btoa(`${user}:${password}`);
       fetchOptions.headers.Authorization = `Basic ${auth}`;
     }
+
     if (options.contentType) {
       fetchOptions.headers["Content-Type"] = options.contentType;
     }
+
     fetch(url, fetchOptions)
       .then(response => {
         let resultPromise;
@@ -210,13 +261,20 @@ function _promiseAjax(providedUrl, options) {
           response.headers.get("Content-Type") === "application/json"
         ) {
           resultPromise = response.json();
-        } else if (options.responseType === "arraybuffer") {
+        } else if (
+          options.responseType === "arraybuffer" ||
+          options.responseType === "arraybufferwithdetails"
+        ) {
           resultPromise = response.buffer();
         } else {
           resultPromise = response.text();
         }
+
         return resultPromise.then(result => {
-          if (options.responseType === "arraybuffer") {
+          if (
+            options.responseType === "arraybuffer" ||
+            options.responseType === "arraybufferwithdetails"
+          ) {
             // eslint-disable-next-line no-param-reassign
             result = result.buffer.slice(
               result.byteOffset,
@@ -226,8 +284,17 @@ function _promiseAjax(providedUrl, options) {
           if (options.responseType === "json") {
             if (options.validateResponse) {
               if (!_validateResponse(result, options.validateResponse)) {
-                console.error(options.type, url, response.status, "Error");
-                reject(
+                if (options.redactUrl) {
+                  debug(
+                    options.type,
+                    options.redactUrl(url),
+                    response.status,
+                    "Error"
+                  );
+                } else {
+                  debug(options.type, url, response.status, "Error");
+                }
+                return reject(
                   HTTPError(
                     "promiseAjax: invalid response",
                     response.status,
@@ -239,23 +306,52 @@ function _promiseAjax(providedUrl, options) {
             }
           }
           if (response.status >= 0 && response.status < 400) {
-            console.info(options.type, url, response.status, "Success");
-            resolve(result, response.status);
-          } else {
-            console.error(options.type, url, response.status, "Error");
-            reject(
-              HTTPError(
-                "promiseAjax: error response",
+            if (options.redactUrl) {
+              debug(
+                options.type,
+                options.redactUrl(url),
                 response.status,
-                result,
-                options.stack
-              )
-            );
+                "Success"
+              );
+            } else {
+              debug(options.type, url, response.status, "Success");
+            }
+            if (options.responseType === "arraybufferwithdetails") {
+              return resolve({
+                data: result,
+                contentType: getContentType(response),
+                response
+              });
+            }
+            return resolve(result, response.status);
           }
+
+          if (options.redactUrl) {
+            debug(
+              options.type,
+              options.redactUrl(url),
+              response.status,
+              "Error"
+            );
+          } else {
+            debug(options.type, url, response.status, "Error");
+          }
+          return reject(
+            HTTPError(
+              "promiseAjax: error response",
+              response.status,
+              result,
+              options.stack
+            )
+          );
         });
       })
       .catch(e => {
-        console.error(options.type, url, 0, "Error");
+        if (options.redactUrl) {
+          debug(options.type, options.redactUrl(url), 0, "Error");
+        } else {
+          debug(options.type, url, 0, "Error");
+        }
         const stack = `${e.stack}\nInitial stack:\n${options.stack}`;
         reject(HTTPError("promiseAjax catch", 0, e.toString(), stack));
       });
@@ -297,12 +393,16 @@ function HTTPError(message, providedCode, response, stack) {
 
 const URL_CALLS = {
   accounts: "v1/accounts",
+  updateDeviceName: "v1/accounts/name",
+  removeSignalingKey: "v1/accounts/signaling_key",
+  attachmentId: "v2/attachments/form/upload",
+  deliveryCert: "v1/certificate/delivery",
+  supportUnauthenticatedDelivery: "v1/devices/unauthenticated_delivery",
   devices: "v1/devices",
   keys: "v2/keys",
-  signed: "v2/keys/signed",
   messages: "v1/messages",
-  attachment: "v1/attachments",
-  profile: "v1/profile"
+  profile: "v1/profile",
+  signed: "v2/keys/signed"
 };
 
 module.exports = {
@@ -310,7 +410,13 @@ module.exports = {
 };
 
 // We first set up the data that won't change during this session of the app
-function initialize({ url, cdnUrl, certificateAuthority, proxyUrl }) {
+function initialize({
+  url,
+  cdnUrl,
+  certificateAuthority,
+  contentProxyUrl,
+  proxyUrl
+}) {
   if (!is.string(url)) {
     throw new Error("WebAPI.initialize: Invalid server url");
   }
@@ -319,6 +425,9 @@ function initialize({ url, cdnUrl, certificateAuthority, proxyUrl }) {
   }
   if (!is.string(certificateAuthority)) {
     throw new Error("WebAPI.initialize: Invalid certificateAuthority");
+  }
+  if (!is.string(contentProxyUrl)) {
+    throw new Error("WebAPI.initialize: Invalid contentProxyUrl");
   }
 
   // Thanks to function-hoisting, we can put this return statement before all of the
@@ -333,6 +442,7 @@ function initialize({ url, cdnUrl, certificateAuthority, proxyUrl }) {
   function connect({ username: initialUsername, password: initialPassword }) {
     let username = initialUsername;
     let password = initialPassword;
+    const PARSE_RANGE_HEADER = /\/(\d+)$/;
 
     // Thanks, function hoisting!
     return {
@@ -341,16 +451,26 @@ function initialize({ url, cdnUrl, certificateAuthority, proxyUrl }) {
       getAvatar,
       getDevices,
       getKeysForNumber,
+      getKeysForNumberUnauth,
       getMessageSocket,
       getMyKeys,
       getProfile,
+      getProfileUnauth,
       getProvisioningSocket,
+      getSenderCertificate,
+      getSticker,
+      getStickerPackManifest,
+      makeProxiedRequest,
       putAttachment,
       registerKeys,
+      registerSupportForUnauthenticatedDelivery,
+      removeSignalingKey,
       requestVerificationSMS,
       requestVerificationVoice,
       sendMessages,
-      setSignedPreKey
+      sendMessagesUnauth,
+      setSignedPreKey,
+      updateDeviceName
     };
 
     function _ajax(param) {
@@ -370,7 +490,9 @@ function initialize({ url, cdnUrl, certificateAuthority, proxyUrl }) {
         timeout: param.timeout,
         type: param.httpType,
         user: username,
-        validateResponse: param.validateResponse
+        validateResponse: param.validateResponse,
+        unauthenticated: param.unauthenticated,
+        accessKey: param.accessKey
       }).catch(e => {
         const { code } = e;
         if (code === 200) {
@@ -405,8 +527,25 @@ function initialize({ url, cdnUrl, certificateAuthority, proxyUrl }) {
             message =
               "The server rejected our query, please file a bug report.";
         }
-        e.message = message;
+        e.message = `${message} (original: ${e.message})`;
         throw e;
+      });
+    }
+
+    function getSenderCertificate() {
+      return _ajax({
+        call: "deliveryCert",
+        httpType: "GET",
+        responseType: "json",
+        schema: { certificate: "string" }
+      });
+    }
+
+    function registerSupportForUnauthenticatedDelivery() {
+      return _ajax({
+        call: "supportUnauthenticatedDelivery",
+        httpType: "PUT",
+        responseType: "json"
       });
     }
 
@@ -416,6 +555,16 @@ function initialize({ url, cdnUrl, certificateAuthority, proxyUrl }) {
         httpType: "GET",
         urlParameters: `/${number}`,
         responseType: "json"
+      });
+    }
+    function getProfileUnauth(number, { accessKey } = {}) {
+      return _ajax({
+        call: "profile",
+        httpType: "GET",
+        urlParameters: `/${number}`,
+        responseType: "json",
+        unauthenticated: true,
+        accessKey
       });
     }
 
@@ -452,15 +601,19 @@ function initialize({ url, cdnUrl, certificateAuthority, proxyUrl }) {
       number,
       code,
       newPassword,
-      signalingKey,
       registrationId,
-      deviceName
+      deviceName,
+      options = {}
     ) {
+      const { accessKey } = options;
       const jsonData = {
-        signalingKey: _btoa(_getString(signalingKey)),
         supportsSms: false,
         fetchesMessages: true,
-        registrationId
+        registrationId,
+        unidentifiedAccessKey: accessKey
+          ? _btoa(_getString(accessKey))
+          : undefined,
+        unrestrictedUnidentifiedAccess: false
       };
 
       let call;
@@ -496,6 +649,23 @@ function initialize({ url, cdnUrl, certificateAuthority, proxyUrl }) {
       username = `${number}.${response.deviceId || 1}`;
 
       return response;
+    }
+
+    function updateDeviceName(deviceName) {
+      return _ajax({
+        call: "updateDeviceName",
+        httpType: "PUT",
+        jsonData: {
+          deviceName
+        }
+      });
+    }
+
+    function removeSignalingKey() {
+      return _ajax({
+        call: "removeSignalingKey",
+        httpType: "DELETE"
+      });
     }
 
     function getDevices() {
@@ -557,6 +727,43 @@ function initialize({ url, cdnUrl, certificateAuthority, proxyUrl }) {
       }).then(res => res.count);
     }
 
+    function handleKeys(res) {
+      if (!Array.isArray(res.devices)) {
+        throw new Error("Invalid response");
+      }
+      res.identityKey = _base64ToBytes(res.identityKey);
+      res.devices.forEach(device => {
+        if (
+          !_validateResponse(device, { signedPreKey: "object" }) ||
+          !_validateResponse(device.signedPreKey, {
+            publicKey: "string",
+            signature: "string"
+          })
+        ) {
+          throw new Error("Invalid signedPreKey");
+        }
+        if (device.preKey) {
+          if (
+            !_validateResponse(device, { preKey: "object" }) ||
+            !_validateResponse(device.preKey, { publicKey: "string" })
+          ) {
+            throw new Error("Invalid preKey");
+          }
+          // eslint-disable-next-line no-param-reassign
+          device.preKey.publicKey = _base64ToBytes(device.preKey.publicKey);
+        }
+        // eslint-disable-next-line no-param-reassign
+        device.signedPreKey.publicKey = _base64ToBytes(
+          device.signedPreKey.publicKey
+        );
+        // eslint-disable-next-line no-param-reassign
+        device.signedPreKey.signature = _base64ToBytes(
+          device.signedPreKey.signature
+        );
+      });
+      return res;
+    }
+
     function getKeysForNumber(number, deviceId = "*") {
       return _ajax({
         call: "keys",
@@ -564,49 +771,67 @@ function initialize({ url, cdnUrl, certificateAuthority, proxyUrl }) {
         urlParameters: `/${number}/${deviceId}`,
         responseType: "json",
         validateResponse: { identityKey: "string", devices: "object" }
-      }).then(res => {
-        if (res.devices.constructor !== Array) {
-          throw new Error("Invalid response");
-        }
-        res.identityKey = _base64ToBytes(res.identityKey);
-        res.devices.forEach(device => {
-          if (
-            !_validateResponse(device, { signedPreKey: "object" }) ||
-            !_validateResponse(device.signedPreKey, {
-              publicKey: "string",
-              signature: "string"
-            })
-          ) {
-            throw new Error("Invalid signedPreKey");
-          }
-          if (device.preKey) {
-            if (
-              !_validateResponse(device, { preKey: "object" }) ||
-              !_validateResponse(device.preKey, { publicKey: "string" })
-            ) {
-              throw new Error("Invalid preKey");
-            }
-            // eslint-disable-next-line no-param-reassign
-            device.preKey.publicKey = _base64ToBytes(device.preKey.publicKey);
-          }
-          // eslint-disable-next-line no-param-reassign
-          device.signedPreKey.publicKey = _base64ToBytes(
-            device.signedPreKey.publicKey
-          );
-          // eslint-disable-next-line no-param-reassign
-          device.signedPreKey.signature = _base64ToBytes(
-            device.signedPreKey.signature
-          );
-        });
-        return res;
-      });
+      }).then(handleKeys);
     }
 
-    function sendMessages(destination, messageArray, timestamp, silent) {
+    function getKeysForNumberUnauth(
+      number,
+      deviceId = "*",
+      { accessKey } = {}
+    ) {
+      return _ajax({
+        call: "keys",
+        httpType: "GET",
+        urlParameters: `/${number}/${deviceId}`,
+        responseType: "json",
+        validateResponse: { identityKey: "string", devices: "object" },
+        unauthenticated: true,
+        accessKey
+      }).then(handleKeys);
+    }
+
+    function sendMessagesUnauth(
+      destination,
+      messageArray,
+      timestamp,
+      silent,
+      online,
+      { accessKey } = {}
+    ) {
       const jsonData = { messages: messageArray, timestamp };
 
       if (silent) {
         jsonData.silent = true;
+      }
+      if (online) {
+        jsonData.online = true;
+      }
+
+      return _ajax({
+        call: "messages",
+        httpType: "PUT",
+        urlParameters: `/${destination}`,
+        jsonData,
+        responseType: "json",
+        unauthenticated: true,
+        accessKey
+      });
+    }
+
+    function sendMessages(
+      destination,
+      messageArray,
+      timestamp,
+      silent,
+      online
+    ) {
+      const jsonData = { messages: messageArray, timestamp };
+
+      if (silent) {
+        jsonData.silent = true;
+      }
+      if (online) {
+        jsonData.online = true;
       }
 
       return _ajax({
@@ -618,45 +843,179 @@ function initialize({ url, cdnUrl, certificateAuthority, proxyUrl }) {
       });
     }
 
-    function getAttachment(id) {
-      return _ajax({
-        call: "attachment",
-        httpType: "GET",
-        urlParameters: `/${id}`,
-        responseType: "json",
-        validateResponse: { location: "string" }
-      }).then(response =>
-        // Using _outerAJAX, since it's not hardcoded to the Signal Server
-        _outerAjax(response.location, {
-          contentType: "application/octet-stream",
-          proxyUrl,
-          responseType: "arraybuffer",
-          timeout: 0,
-          type: "GET"
-        })
+    function redactStickerUrl(stickerUrl) {
+      return stickerUrl.replace(
+        /(\/stickers\/)([^/]+)(\/)/,
+        (match, begin, packId, end) => `${begin}${redactPackId(packId)}${end}`
       );
     }
 
-    function putAttachment(encryptedBin) {
-      return _ajax({
-        call: "attachment",
+    function getSticker(packId, stickerId) {
+      return _outerAjax(`${cdnUrl}/stickers/${packId}/full/${stickerId}`, {
+        certificateAuthority,
+        proxyUrl,
+        responseType: "arraybuffer",
+        type: "GET",
+        redactUrl: redactStickerUrl
+      });
+    }
+
+    function getStickerPackManifest(packId) {
+      return _outerAjax(`${cdnUrl}/stickers/${packId}/manifest.proto`, {
+        certificateAuthority,
+        proxyUrl,
+        responseType: "arraybuffer",
+        type: "GET",
+        redactUrl: redactStickerUrl
+      });
+    }
+
+    async function getAttachment(id) {
+      // This is going to the CDN, not the service, so we use _outerAjax
+      return _outerAjax(`${cdnUrl}/attachments/${id}`, {
+        certificateAuthority,
+        proxyUrl,
+        responseType: "arraybuffer",
+        timeout: 0,
+        type: "GET"
+      });
+    }
+
+    async function putAttachment(encryptedBin) {
+      const response = await _ajax({
+        call: "attachmentId",
         httpType: "GET",
         responseType: "json"
-      }).then(response =>
-        // Using _outerAJAX, since it's not hardcoded to the Signal Server
-        _outerAjax(response.location, {
-          contentType: "application/octet-stream",
-          data: encryptedBin,
-          processData: false,
-          proxyUrl,
-          timeout: 0,
-          type: "PUT"
-        }).then(() => response.idString)
+      });
+
+      const {
+        key,
+        credential,
+        acl,
+        algorithm,
+        date,
+        policy,
+        signature,
+        attachmentIdString
+      } = response;
+
+      // Note: when using the boundary string in the POST body, it needs to be prefixed by
+      //   an extra --, and the final boundary string at the end gets a -- prefix and a --
+      //   suffix.
+      const boundaryString = `----------------${getGuid().replace(/-/g, "")}`;
+      const CRLF = "\r\n";
+      const getSection = (name, value) =>
+        [
+          `--${boundaryString}`,
+          `Content-Disposition: form-data; name="${name}"${CRLF}`,
+          value
+        ].join(CRLF);
+
+      const start = [
+        getSection("key", key),
+        getSection("x-amz-credential", credential),
+        getSection("acl", acl),
+        getSection("x-amz-algorithm", algorithm),
+        getSection("x-amz-date", date),
+        getSection("policy", policy),
+        getSection("x-amz-signature", signature),
+        getSection("Content-Type", "application/octet-stream"),
+        `--${boundaryString}`,
+        'Content-Disposition: form-data; name="file"',
+        `Content-Type: application/octet-stream${CRLF}${CRLF}`
+      ].join(CRLF);
+      const end = `${CRLF}--${boundaryString}--${CRLF}`;
+
+      const startBuffer = Buffer.from(start, "utf8");
+      const attachmentBuffer = Buffer.from(encryptedBin);
+      const endBuffer = Buffer.from(end, "utf8");
+
+      const contentLength =
+        startBuffer.length + attachmentBuffer.length + endBuffer.length;
+      const data = Buffer.concat(
+        [startBuffer, attachmentBuffer, endBuffer],
+        contentLength
       );
+
+      // This is going to the CDN, not the service, so we use _outerAjax
+      await _outerAjax(`${cdnUrl}/attachments/`, {
+        certificateAuthority,
+        contentType: `multipart/form-data; boundary=${boundaryString}`,
+        data,
+        proxyUrl,
+        timeout: 0,
+        type: "POST",
+        headers: {
+          "Content-Length": contentLength
+        },
+        processData: false
+      });
+
+      return attachmentIdString;
+    }
+
+    function getHeaderPadding() {
+      const length = Signal.Crypto.getRandomValue(1, 64);
+      let characters = "";
+
+      for (let i = 0, max = length; i < max; i += 1) {
+        characters += String.fromCharCode(
+          Signal.Crypto.getRandomValue(65, 122)
+        );
+      }
+
+      return characters;
+    }
+
+    // eslint-disable-next-line no-shadow
+    async function makeProxiedRequest(url, options = {}) {
+      const { returnArrayBuffer, start, end } = options;
+      const headers = {
+        "X-SignalPadding": getHeaderPadding()
+      };
+
+      if (_.isNumber(start) && _.isNumber(end)) {
+        headers.Range = `bytes=${start}-${end}`;
+      }
+
+      const result = await _outerAjax(url, {
+        processData: false,
+        responseType: returnArrayBuffer ? "arraybufferwithdetails" : null,
+        proxyUrl: contentProxyUrl,
+        type: "GET",
+        redirect: "follow",
+        redactUrl: () => "[REDACTED_URL]",
+        headers
+      });
+
+      if (!returnArrayBuffer) {
+        return result;
+      }
+
+      const { response } = result;
+      if (!response.headers || !response.headers.get) {
+        throw new Error("makeProxiedRequest: Problem retrieving header value");
+      }
+
+      const range = response.headers.get("content-range");
+      const match = PARSE_RANGE_HEADER.exec(range);
+
+      if (!match || !match[1]) {
+        throw new Error(
+          `makeProxiedRequest: Unable to parse total size from ${range}`
+        );
+      }
+
+      const totalSize = parseInt(match[1], 10);
+
+      return {
+        totalSize,
+        result
+      };
     }
 
     function getMessageSocket() {
-      console.info("opening message socket", url);
+      debug("opening message socket", url);
       const fixedScheme = url
         .replace("https://", "wss://")
         .replace("http://", "ws://");
@@ -670,7 +1029,7 @@ function initialize({ url, cdnUrl, certificateAuthority, proxyUrl }) {
     }
 
     function getProvisioningSocket() {
-      console.info("opening provisioning socket", url);
+      debug("opening provisioning socket", url);
       const fixedScheme = url
         .replace("https://", "wss://")
         .replace("http://", "ws://");

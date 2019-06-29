@@ -1,11 +1,13 @@
 const btoa = require("btoa");
-const EventTarget = require("event-target-shim");
+const debug = require("debug")("libsignal-service:AccountManager");
+const EventTarget = require("./event_target.js");
 const Event = require("./event.js");
 const libsignal = require("@throneless/libsignal-protocol");
 const protobuf = require("./protobufs.js");
 const ProvisionEnvelope = protobuf.lookupType(
   "signalservice.ProvisionEnvelope"
 );
+const DeviceName = protobuf.lookupType("signalservice.DeviceName");
 const ProvisioningUuid = protobuf.lookupType("signalservice.ProvisioningUuid");
 const crypto = require("./crypto.js");
 const provisioning = require("./ProvisioningCipher.js");
@@ -52,6 +54,64 @@ class AccountManager extends EventTarget {
     return this.server.requestVerificationSMS(number);
   }
 
+  async encryptDeviceName(name, providedIdentityKey) {
+    if (!name) {
+      return null;
+    }
+    const identityKey =
+      providedIdentityKey || (await this.store.getIdentityKeyPair());
+    if (!identityKey) {
+      throw new Error("Identity key was not provided and is not in database!");
+    }
+    const encrypted = await crypto.encryptDeviceName(name, identityKey.pubKey);
+
+    const proto = DeviceName.create();
+    proto.ephemeralPublic = new Uint8Array(encrypted.ephemeralPublic);
+    proto.syntheticIv = encrypted.syntheticIv;
+    proto.ciphertext = new Uint8Array(encrypted.ciphertext);
+
+    const arrayBuffer = DeviceName.encode(proto).finish();
+    return crypto.arrayBufferToBase64(arrayBuffer);
+  }
+
+  async decryptDeviceName(base64) {
+    const identityKey = await this.store.getIdentityKeyPair();
+
+    const arrayBuffer = crypto.base64ToArrayBuffer(base64);
+    const proto = DeviceName.decode(new Uint8Array(arrayBuffer));
+    //const encrypted = {
+    //  ephemeralPublic: proto.ephemeralPublic.toArrayBuffer(),
+    //  syntheticIv: proto.syntheticIv.toArrayBuffer(),
+    //  ciphertext: proto.ciphertext.toArrayBuffer()
+    //};
+
+    const name = await crypto.decryptDeviceName(proto, identityKey.privKey);
+
+    return name;
+  }
+
+  async maybeUpdateDeviceName() {
+    const isNameEncrypted = this.store.userGetDeviceNameEncrypted();
+    if (isNameEncrypted) {
+      return;
+    }
+    const deviceName = await this.store.userGetDeviceName();
+    const base64 = await this.encryptDeviceName(deviceName);
+
+    await this.server.updateDeviceName(base64);
+  }
+
+  async deviceNameIsEncrypted() {
+    await this.store.userSetDeviceNameEncrypted();
+  }
+
+  async maybeDeleteSignalingKey() {
+    const key = await this.store.UserGetSignalingKey();
+    if (key) {
+      await this.server.removeSignalingKey();
+    }
+  }
+
   registerSingleDevice(number, verificationCode) {
     const registerKeys = this.server.registerKeys.bind(this.server);
     const createAccount = this.createAccount.bind(this);
@@ -60,19 +120,27 @@ class AccountManager extends EventTarget {
     const confirmKeys = this.confirmKeys.bind(this);
     const registrationDone = this.registrationDone.bind(this);
     return this.queueTask(() =>
-      libsignal.KeyHelper.generateIdentityKeyPair().then(identityKeyPair => {
-        const profileKey = crypto.getRandomBytes(32);
-        return createAccount(
-          number,
-          verificationCode,
-          identityKeyPair,
-          profileKey
-        )
-          .then(clearSessionsAndPreKeys)
-          .then(generateKeys)
-          .then(keys => registerKeys(keys).then(() => confirmKeys(keys)))
-          .then(registrationDone);
-      })
+      libsignal.KeyHelper.generateIdentityKeyPair().then(
+        async identityKeyPair => {
+          const profileKey = crypto.getRandomBytes(32);
+          const accessKey = await crypto.deriveAccessKey(profileKey);
+
+          return createAccount(
+            number,
+            verificationCode,
+            identityKeyPair,
+            profileKey,
+            null,
+            null,
+            null,
+            { accessKey }
+          )
+            .then(clearSessionsAndPreKeys)
+            .then(generateKeys)
+            .then(keys => registerKeys(keys).then(() => confirmKeys(keys)))
+            .then(() => registrationDone(number));
+        }
+      )
     );
   }
 
@@ -92,13 +160,13 @@ class AccountManager extends EventTarget {
         new Promise((resolve, reject) => {
           const socket = getSocket();
           socket.onclose = event => {
-            console.info("provisioning socket closed. Code:", event.code);
+            debug("provisioning socket closed. Code:", event.code);
             if (!gotProvisionEnvelope) {
               reject(new Error("websocket closed"));
             }
           };
           socket.onopen = () => {
-            console.info("provisioning socket open");
+            debug("provisioning socket open");
           };
           const wsr = new WebSocketResource(socket, {
             keepalive: { path: "/v1/keepalive/provisioning" },
@@ -150,14 +218,16 @@ class AccountManager extends EventTarget {
                             .then(keys =>
                               registerKeys(keys).then(() => confirmKeys(keys))
                             )
-                            .then(registrationDone);
+                            .then(() =>
+                              registrationDone(provisionMessage.number)
+                            );
                         }
                       )
                     )
                   )
                 );
               } else {
-                console.error("Unknown websocket message", request.path);
+                debug("Unknown websocket message", request.path);
               }
             }
           });
@@ -171,7 +241,7 @@ class AccountManager extends EventTarget {
 
     return this.queueTask(() =>
       this.server.getMyKeys().then(preKeyCount => {
-        console.info(`prekey count ${preKeyCount}`);
+        debug(`prekey count ${preKeyCount}`);
         if (preKeyCount < 10) {
           return generateKeys().then(registerKeys);
         }
@@ -189,24 +259,22 @@ class AccountManager extends EventTarget {
 
       const { server, cleanSignedPreKeys } = this;
 
-      // TODO: harden this against missing identity key? Otherwise, we get
-      //   retries every five seconds.
       return this.store
         .getIdentityKeyPair()
         .then(
           identityKey =>
             libsignal.KeyHelper.generateSignedPreKey(identityKey, signedKeyId),
           () => {
-            console.error(
-              "Failed to get identity key. Canceling key rotation."
-            );
+            // We swallow any error here, because we don't want to get into
+            //   a loop of repeated retries.
+            debug("Failed to get identity key. Canceling key rotation.");
           }
         )
         .then(res => {
           if (!res) {
             return null;
           }
-          console.info("Saving new signed prekey", res.keyId);
+          debug("Saving new signed prekey", res.keyId);
           return Promise.all([
             this.store.put("signedKeyId", signedKeyId + 1),
             this.store.storeSignedPreKey(res.keyId, res.keyPair),
@@ -218,7 +286,7 @@ class AccountManager extends EventTarget {
           ])
             .then(() => {
               const confirmed = true;
-              console.info("Confirming new signed prekey", res.keyId);
+              debug("Confirming new signed prekey", res.keyId);
               return Promise.all([
                 this.store.remove("signedKeyRotationRejected"),
                 this.store.storeSignedPreKey(res.keyId, res.keyPair, confirmed)
@@ -227,10 +295,7 @@ class AccountManager extends EventTarget {
             .then(() => cleanSignedPreKeys());
         })
         .catch(e => {
-          console.error(
-            "rotateSignedPrekey error:",
-            e && e.stack ? e.stack : e
-          );
+          debug("rotateSignedPrekey error:", e && e.stack ? e.stack : e);
 
           if (
             e instanceof Error &&
@@ -241,7 +306,7 @@ class AccountManager extends EventTarget {
             const rejections =
               1 + this.store.get("signedKeyRotationRejected", 0);
             this.store.put("signedKeyRotationRejected", rejections);
-            console.error("Signed key rotation rejected count:", rejections);
+            debug("Signed key rotation rejected count:", rejections);
           } else {
             throw e;
           }
@@ -266,9 +331,9 @@ class AccountManager extends EventTarget {
 
       const recent = allKeys[0] ? allKeys[0].keyId : "none";
       const recentConfirmed = confirmed[0] ? confirmed[0].keyId : "none";
-      console.info(`Most recent signed key: ${recent}`);
-      console.info(`Most recent confirmed signed key: ${recentConfirmed}`);
-      console.info(
+      debug(`Most recent signed key: ${recent}`);
+      debug(`Most recent confirmed signed key: ${recentConfirmed}`);
+      debug(
         "Total signed key count:",
         allKeys.length,
         "-",
@@ -287,7 +352,7 @@ class AccountManager extends EventTarget {
         const age = Date.now() - createdAt;
 
         if (age > ARCHIVE_AGE) {
-          console.info(
+          debug(
             "Removing confirmed signed prekey:",
             key.keyId,
             "with timestamp:",
@@ -310,7 +375,7 @@ class AccountManager extends EventTarget {
         const createdAt = key.created_at || 0;
         const age = Date.now() - createdAt;
         if (age > ARCHIVE_AGE) {
-          console.info(
+          debug(
             "Removing unconfirmed signed prekey:",
             key.keyId,
             "with timestamp:",
@@ -322,105 +387,98 @@ class AccountManager extends EventTarget {
     });
   }
 
-  createAccount(
+  async createAccount(
     number,
     verificationCode,
     identityKeyPair,
     profileKey,
     deviceName,
     userAgent,
-    readReceipts
+    readReceipts,
+    options = {}
   ) {
-    const signalingKey = crypto.getRandomBytes(32 + 20);
+    const { accessKey } = options;
     const registrationId = libsignal.KeyHelper.generateRegistrationId();
 
     const previousNumber = getNumber(this.store.get("number_id"));
 
-    return this.server
-      .confirmCode(
-        number,
-        verificationCode,
-        this.password,
-        signalingKey,
-        registrationId,
-        deviceName
-      )
-      .then(response => {
-        if (previousNumber && previousNumber !== number) {
-          console.warn(
-            "New number is different from old number; deleting all previous data"
-          );
+    const encryptedDeviceName = await this.encryptDeviceName(
+      deviceName,
+      identityKeyPair
+    );
+    await this.deviceNameIsEncrypted();
 
-          return this.store.removeAllData().then(
-            () => {
-              console.info("Successfully deleted previous data");
-              return response;
-            },
-            error => {
-              console.error(
-                "Something went wrong deleting data from previous number",
-                error && error.stack ? error.stack : error
-              );
+    const response = await this.server.confirmCode(
+      number,
+      verificationCode,
+      this.password,
+      registrationId,
+      encryptedDeviceName,
+      { accessKey }
+    );
 
-              return response;
-            }
-          );
-        }
+    if (previousNumber && previousNumber !== number) {
+      debug(
+        "New number is different from old number; deleting all previous data"
+      );
 
-        return response;
-      })
-      .then(response => {
-        this.store.remove("identityKey");
-        this.store.remove("signaling_key");
-        this.store.remove("registrationId");
-        this.store.remove("number_id");
-        this.store.remove("device_name");
-        this.store.remove("regionCode");
-        this.store.remove("userAgent");
-        this.store.remove("profileKey");
-        this.store.remove("read-receipts-setting");
-
-        // update our own identity key, which may have changed
-        // if we're relinking after a reinstall on the master device
-        this.store.saveIdentityWithAttributes(number, {
-          id: number,
-          publicKey: identityKeyPair.pubKey,
-          firstUse: true,
-          timestamp: Date.now(),
-          verified: VerifiedStatus.VERIFIED,
-          nonblockingApproval: true
-        });
-
-        this.store.put("identityKey", identityKeyPair);
-        this.store.put("signaling_key", signalingKey);
-        this.store.put("registrationId", registrationId);
-        if (profileKey) {
-          this.store.put("profileKey", profileKey);
-        }
-        if (userAgent) {
-          this.store.put("userAgent", userAgent);
-        }
-        if (readReceipts) {
-          this.store.put("read-receipt-setting", true);
-        } else {
-          this.store.put("read-receipt-setting", false);
-        }
-
-        this.store.userSetNumberAndDeviceId(
-          number,
-          response.deviceId || 1,
-          deviceName
+      try {
+        await this.store.removeAllData();
+        debug("Successfully deleted previous data");
+      } catch (error) {
+        debug(
+          "Something went wrong deleting data from previous number",
+          error && error.stack ? error.stack : error
         );
-        this.store.put(
-          "regionCode",
-          libphonenumber.util.getRegionCodeForNumber(number)
-        );
-      });
+      }
+    }
+
+    await Promise.all([
+      this.store.remove("identityKey"),
+      this.store.remove("password"),
+      this.store.remove("registrationId"),
+      this.store.remove("number_id"),
+      this.store.remove("device_name"),
+      this.store.remove("regionCode"),
+      this.store.remove("userAgent"),
+      this.store.remove("profileKey"),
+      this.store.remove("read-receipts-setting")
+    ]);
+
+    // update our own identity key, which may have changed
+    // if we're relinking after a reinstall on the master device
+    await this.store.saveIdentityWithAttributes(number, {
+      id: number,
+      publicKey: identityKeyPair.pubKey,
+      firstUse: true,
+      timestamp: Date.now(),
+      verified: VerifiedStatus.VERIFIED,
+      nonblockingApproval: true
+    });
+
+    await this.store.put("identityKey", identityKeyPair);
+    await this.store.put("password", this.password);
+    await this.store.put("registrationId", registrationId);
+    if (profileKey) {
+      await this.store.put("profileKey", profileKey);
+    }
+    if (userAgent) {
+      await this.store.put("userAgent", userAgent);
+    }
+    await this.store.put("read-receipt-setting", Boolean(readReceipts));
+
+    await this.store.userSetNumberAndDeviceId(
+      number,
+      response.deviceId || 1,
+      deviceName
+    );
+    const regionCode = libphonenumber.util.getRegionCodeForNumber(number);
+    await this.store.put("regionCode", regionCode);
   }
 
-  clearSessionsAndPreKeys() {
-    console.info("clearing all sessions, prekeys, and signed prekeys");
-    return Promise.all([
+  async clearSessionsAndPreKeys() {
+    debug("clearing all sessions, prekeys, and signed prekeys");
+    await Promise.all([
       this.store.clearPreKeyStore(),
       this.store.clearSignedPreKeysStore(),
       this.store.clearSessionStore()
@@ -428,12 +486,12 @@ class AccountManager extends EventTarget {
   }
 
   // Takes the same object returned by generateKeys
-  confirmKeys(keys) {
+  async confirmKeys(keys) {
     const key = keys.signedPreKey;
     const confirmed = true;
 
-    console.info("confirmKeys: confirming key", key.keyId);
-    return this.store.storeSignedPreKey(key.keyId, key.keyPair, confirmed);
+    debug("confirmKeys: confirming key", key.keyId);
+    await this.store.storeSignedPreKey(key.keyId, key.keyPair, confirmed);
   }
 
   generateKeys(count, providedProgressCallback) {
@@ -494,8 +552,12 @@ class AccountManager extends EventTarget {
     });
   }
 
-  registrationDone() {
-    console.info("registration done");
+  async registrationDone() {
+    debug("registration done");
+
+    // Ensure that we always have a conversation for ourself
+    //await ConversationController.getOrCreateAndWait(number, "private");
+
     this.dispatchEvent(new Event("registration"));
   }
 }

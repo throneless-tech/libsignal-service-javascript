@@ -8,7 +8,7 @@ var PASSWORD = "password";
 var assert = require("chai").assert;
 var assertEqualArrayBuffers = require("./_test.js").assertEqualArrayBuffers;
 
-describe("Key generation", function() {
+describe("Key generation", function thisNeeded() {
   var count = 10;
   this.timeout(count * 2000);
 
@@ -58,12 +58,12 @@ describe("Key generation", function() {
   describe("the first time", function() {
     var result;
     /* result should have this format
-         * {
-         *   preKeys: [ { keyId, publicKey }, ... ],
-         *   signedPreKey: { keyId, publicKey, signature },
-         *   identityKey: <ArrayBuffer>
-         * }
-         */
+     * {
+     *   preKeys: [ { keyId, publicKey }, ... ],
+     *   signedPreKey: { keyId, publicKey, signature },
+     *   identityKey: <ArrayBuffer>
+     * }
+     */
     before(function() {
       var accountManager = new api.AccountManager(
         USERNAME,
@@ -74,7 +74,7 @@ describe("Key generation", function() {
         result = res;
       });
     });
-    for (var i = 1; i <= count; i++) {
+    for (var i = 1; i <= count; i += 1) {
       itStoresPreKey(i);
     }
     itStoresSignedPreKey(1);
@@ -82,12 +82,12 @@ describe("Key generation", function() {
     it("result contains " + count + " preKeys", function() {
       assert.isArray(result.preKeys);
       assert.lengthOf(result.preKeys, count);
-      for (var i = 0; i < count; i++) {
+      for (var i = 0; i < count; i += 1) {
         assert.isObject(result.preKeys[i]);
       }
     });
     it("result contains the correct keyIds", function() {
-      for (var i = 0; i < count; i++) {
+      for (var i = 0; i < count; i += 1) {
         assert.strictEqual(result.preKeys[i].keyId, i + 1);
       }
     });
@@ -112,7 +112,7 @@ describe("Key generation", function() {
         result = res;
       });
     });
-    for (var i = 1; i <= 2 * count; i++) {
+    for (var i = 1; i <= 2 * count; i += 1) {
       itStoresPreKey(i);
     }
     itStoresSignedPreKey(1);
@@ -120,12 +120,12 @@ describe("Key generation", function() {
     it("result contains " + count + " preKeys", function() {
       assert.isArray(result.preKeys);
       assert.lengthOf(result.preKeys, count);
-      for (var i = 0; i < count; i++) {
+      for (var i = 0; i < count; i += 1) {
         assert.isObject(result.preKeys[i]);
       }
     });
     it("result contains the correct keyIds", function() {
-      for (var i = 1; i <= count; i++) {
+      for (var i = 1; i <= count; i += 1) {
         assert.strictEqual(result.preKeys[i - 1].keyId, i + count);
       }
     });
@@ -150,7 +150,7 @@ describe("Key generation", function() {
         result = res;
       });
     });
-    for (var i = 1; i <= 3 * count; i++) {
+    for (var i = 1; i <= 3 * count; i += 1) {
       itStoresPreKey(i);
     }
     itStoresSignedPreKey(2);
@@ -158,12 +158,12 @@ describe("Key generation", function() {
     it("result contains " + count + " preKeys", function() {
       assert.isArray(result.preKeys);
       assert.lengthOf(result.preKeys, count);
-      for (var i = 0; i < count; i++) {
+      for (var i = 0; i < count; i += 1) {
         assert.isObject(result.preKeys[i]);
       }
     });
     it("result contains the correct keyIds", function() {
-      for (var i = 1; i <= count; i++) {
+      for (var i = 1; i <= count; i += 1) {
         assert.strictEqual(result.preKeys[i - 1].keyId, i + 2 * count);
       }
     });

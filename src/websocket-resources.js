@@ -3,7 +3,8 @@
  */
 "use strict";
 
-const EventTarget = require("event-target-shim");
+const debug = require("debug")("libsignal-service:WebSocketResource");
+const EventTarget = require("./event_target.js");
 const Event = require("./event.js");
 const FileReader = require("filereader");
 const Long = require("long");
@@ -12,30 +13,31 @@ const protobuf = require("./protobufs.js");
 const WebSocketMessage = protobuf.lookupType("signalservice.WebSocketMessage");
 // eslint-disable-next-line func-names
 /*
-   * WebSocket-Resources
-   *
-   * Create a request-response interface over websockets using the
-   * WebSocket-Resources sub-protocol[1].
-   *
-   * var client = new WebSocketResource(socket, function(request) {
-   *    request.respond(200, 'OK');
-   * });
-   *
-   * client.sendRequest({
-   *    verb: 'PUT',
-   *    path: '/v1/messages',
-   *    body: '{ some: "json" }',
-   *    success: function(message, status, request) {...},
-   *    error: function(message, status, request) {...}
-   * });
-   *
-   * 1. https://github.com/signalapp/WebSocket-Resources
-   *
-   */
+ * WebSocket-Resources
+ *
+ * Create a request-response interface over websockets using the
+ * WebSocket-Resources sub-protocol[1].
+ *
+ * var client = new WebSocketResource(socket, function(request) {
+ *    request.respond(200, 'OK');
+ * });
+ *
+ * client.sendRequest({
+ *    verb: 'PUT',
+ *    path: '/v1/messages',
+ *    body: '{ some: "json" }',
+ *    success: function(message, status, request) {...},
+ *    error: function(message, status, request) {...}
+ * });
+ *
+ * 1. https://github.com/signalapp/WebSocket-Resources
+ *
+ */
 class Request {
   constructor(options) {
     this.verb = options.verb || options.type;
     this.path = options.path || options.url;
+    this.headers = options.headers;
     this.body = new Uint8Array(options.body || options.data);
     this.success = options.success;
     this.error = options.error;
@@ -58,6 +60,8 @@ class IncomingWebSocketRequest {
     this.verb = request.verb;
     this.path = request.path;
     this.body = request.body;
+    this.headers = request.headers;
+
     this.respond = (status, message) => {
       const wsmessage = WebSocketMessage.create({
         type: WebSocketMessage.Type.RESPONSE,
@@ -79,6 +83,7 @@ class OutgoingWebSocketRequest {
         verb: request.verb,
         path: request.path,
         body: request.body,
+        headers: request.headers,
         id: request.id
       }
     });
@@ -119,7 +124,7 @@ class KeepAlive {
       } else {
         this.reset();
       }
-      console.info("Sending a keepalive message");
+      debug("Sending a keepalive message");
       this.wsr.sendRequest({
         verb: "GET",
         path: this.path,
@@ -149,6 +154,7 @@ class WebSocketResource extends EventTarget {
               verb: message.request.verb,
               path: message.request.path,
               body: message.request.body,
+              headers: message.request.headers,
               id: message.request.id,
               socket
             })
@@ -206,7 +212,7 @@ class WebSocketResource extends EventTarget {
         return;
       }
 
-      console.info("WebSocketResource.close()");
+      debug("WebSocketResource.close()");
       if (this.keepalive) {
         this.keepalive.stop();
       }
@@ -224,7 +230,7 @@ class WebSocketResource extends EventTarget {
         }
         this.closed = true;
 
-        console.warn("Dispatching our own socket close event");
+        debug("Dispatching our own socket close event");
         const ev = new Event("close");
         ev.code = code;
         ev.reason = reason;

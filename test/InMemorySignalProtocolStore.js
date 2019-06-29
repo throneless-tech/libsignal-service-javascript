@@ -56,7 +56,7 @@ function convertToArrayBuffer(thing) {
 
   var str;
   if (isStringable(thing)) {
-    str = stringObject(thing);
+    str = String.fromCharCode.apply(null, thing);
   } else if (typeof thing == "string") {
     str = thing;
   } else {
@@ -475,21 +475,27 @@ SignalProtocolStore.prototype = {
     return Promise.resolve();
   },
   getUnprocessed: function(id) {
-    var collection = [];
-    for (let id of Object.keys(this.store)) {
-      if (id.startsWith("unprocessed" + id)) {
-        collection.push(this.get(id));
+    for (let key of this.store._keys) {
+      if (key == "unprocessed" + id) {
+        return this.get(key);
       }
     }
-    return Promise.resolve(collection);
   },
   addUnprocessed: function(data) {
     return Promise.resolve(this.put("unprocessed" + data.id, data));
   },
-  updateUnprocessed: function(id, updates) {
+  updateUnprocessedWithData: function(id, updates) {
     var unprocessed = this.get("unprocessed" + id, { id: id });
     Object.assign(unprocessed, updates);
     return Promise.resolve(this.put("unprocessed" + id, unprocessed));
+  },
+  updateAttemptsUnprocessed: function(id, attempts) {
+    var unprocessed = this.get("unprocessed" + id, { id: id });
+    unprocessed.attempts = attempts;
+    return Promise.resolve(this.put("unprocessed" + id, unprocessed));
+  },
+  addDecryptedDataUnprocessed: function(id, data) {
+    return Promise.resolve(this.updateUnprocessedWithData(id, data));
   },
   removeUnprocessed: function(id) {
     return Promise.resolve(this.remove("unprocessed" + id));
@@ -516,6 +522,19 @@ SignalProtocolStore.prototype = {
   userGetDeviceName: function() {
     return this.get("device_name");
   },
+
+  userSetDeviceNameEncrypted: function() {
+    return this.put("deviceNameEncrypted", true);
+  },
+
+  userGetDeviceNameEncrypted: function() {
+    return this.get("deviceNameEncrypted");
+  },
+
+  userGetSignalingKey: function() {
+    return this.get("signaling_key");
+  },
+
   // GROUP STORAGE
   groupsCreateNewGroup: function(numbers, groupId) {
     var groupId = groupId;
