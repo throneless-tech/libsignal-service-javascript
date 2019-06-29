@@ -3,6 +3,11 @@
   "version": "0.2.0",
   "description": "A fork of the the libtextsecure components of Signal-Desktop, adapted for use by nodejs.",
   "main": "src/index.js",
+  "files": [
+    "/src",
+    "/config",
+    "/protos"
+  ],
   "scripts": {
     "test": "mocha",
     "lint": "npx eslint ./src/*.js"
