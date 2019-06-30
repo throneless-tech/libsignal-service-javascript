@@ -2,7 +2,7 @@
  * vim: ts=2:sw=2:expandtab
  */
 
-var ByteBuffer = require("bytebuffer");
+const ByteBuffer = require("bytebuffer");
 /* eslint-disable no-proto, no-restricted-syntax, guard-for-in */
 
 /** *******************************

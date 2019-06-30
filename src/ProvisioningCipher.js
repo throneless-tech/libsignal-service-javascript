@@ -1,7 +1,7 @@
 "use strict";
 
-var libsignal = require("@throneless/libsignal-protocol");
-var ProvisionMessage = require("./protobufs.js").lookupType(
+const libsignal = require("@throneless/libsignal-protocol");
+const ProvisionMessage = require("./protobufs.js").lookupType(
   "signalservice.ProvisionMessage"
 );
 
