@@ -4,7 +4,6 @@
 
 "use strict";
 const ByteBuffer = require("bytebuffer");
-//const getRandomValues = require("get-random-values");
 const libsignal = require("@throneless/libsignal-protocol");
 const WebCrypto = require("node-webcrypto-ossl");
 const webcrypto = new WebCrypto();
