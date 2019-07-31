@@ -1,7 +1,20 @@
+/*
+ * vim: ts=2:sw=2:expandtab
+ */
+
+"use strict";
+
 const ByteBuffer = require("bytebuffer");
 const protobuf = require("./protobufs.js");
 const DataMessage = protobuf.lookupType("signalservice.DataMessage");
-const GroupContext = protobuf.lookupType("signalservice.DataMessage");
+const DataMessageQuote = protobuf.lookupType("signalservice.DataMessage.Quote");
+const DataMessageSticker = protobuf.lookupType(
+  "signalservice.DataMessage.Sticker"
+);
+const DataMessagePreview = protobuf.lookupType(
+  "signalservice.DataMessage.Preview"
+);
+const GroupContext = protobuf.lookupType("signalservice.GroupContext");
 
 /* eslint-disable more/no-then, no-bitwise */
 
@@ -117,14 +130,18 @@ class Message {
       proto.flags = this.flags;
     }
     if (this.group) {
-      proto.group = new GroupContext();
-      proto.group.id = stringToArrayBuffer(this.group.id);
+      proto.group = GroupContext.create();
+      proto.group.id = new Uint8Array(stringToArrayBuffer(this.group.id));
       proto.group.type = this.group.type;
     }
     if (this.sticker) {
-      proto.sticker = new DataMessage.Sticker();
-      proto.sticker.packId = hexStringToArrayBuffer(this.sticker.packId);
-      proto.sticker.packKey = base64ToArrayBuffer(this.sticker.packKey);
+      proto.sticker = DataMessageSticker.create();
+      proto.sticker.packId = new Uint8Array(
+        hexStringToArrayBuffer(this.sticker.packId)
+      );
+      proto.sticker.packKey = new Uint8Array(
+        base64ToArrayBuffer(this.sticker.packKey)
+      );
       proto.sticker.stickerId = this.sticker.stickerId;
 
       if (this.sticker.attachmentPointer) {
@@ -133,7 +150,7 @@ class Message {
     }
     if (Array.isArray(this.preview)) {
       proto.preview = this.preview.map(preview => {
-        const item = new DataMessage.Preview();
+        const item = DataMessagePreview.create();
         item.title = preview.title;
         item.url = preview.url;
         item.image = preview.image || null;
@@ -141,17 +158,17 @@ class Message {
       });
     }
     if (this.quote) {
-      const { QuotedAttachment } = DataMessage.Quote;
+      const { QuotedAttachment } = DataMessageQuote;
       const { Quote } = DataMessage;
 
-      proto.quote = new Quote();
+      proto.quote = Quote.create();
       const { quote } = proto;
 
       quote.id = this.quote.id;
       quote.author = this.quote.author;
       quote.text = this.quote.text;
       quote.attachments = (this.quote.attachments || []).map(attachment => {
-        const quotedAttachment = new QuotedAttachment();
+        const quotedAttachment = QuotedAttachment.create();
 
         quotedAttachment.contentType = attachment.contentType;
         quotedAttachment.fileName = attachment.fileName;

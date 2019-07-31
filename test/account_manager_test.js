@@ -1,16 +1,14 @@
 "use strict";
 const assert = require("chai").assert;
 const api = require("../src/index.js");
-const ProtocolStore = require("./InMemorySignalProtocolStore.js");
-var protocolStore = new ProtocolStore();
 const USERNAME = "+15555555";
 const PASSWORD = "password";
 
 describe("AccountManager", () => {
   describe("#cleanSignedPreKeys", async () => {
     let signedPreKeys;
-    let identityKey = await api.KeyHelper.generateIdentityKeyPair();
-    protocolStore = {
+    const identityKey = await api.KeyHelper.generateIdentityKeyPair();
+    const protocolStore = {
       getIdentityKeyPair() {
         return identityKey;
       },

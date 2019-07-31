@@ -1,8 +1,8 @@
 "use strict";
 
-var ProtocolStore = require("./InMemorySignalProtocolStore.js");
-var protocolStore = new ProtocolStore();
 var api = require("../src/index.js");
+var storage = require("./InMemorySignalProtocolStore.js");
+var protocolStore = new api.ProtocolStore(new storage());
 var USERNAME = "+15555555";
 var PASSWORD = "password";
 var assert = require("chai").assert;
@@ -48,11 +48,12 @@ describe("Key generation", function thisNeeded() {
       });
   }
 
-  before(function() {
-    //localStorage.clear();
-    return api.KeyHelper.generateIdentityKeyPair().then(function(keyPair) {
-      return protocolStore.put("identityKey", keyPair);
-    });
+  before(done => {
+    protocolStore
+      .removeAllData()
+      .then(() => api.KeyHelper.generateIdentityKeyPair())
+      .then(keyPair => protocolStore.setIdentityKeyPair(keyPair))
+      .then(() => done());
   });
 
   describe("the first time", function() {

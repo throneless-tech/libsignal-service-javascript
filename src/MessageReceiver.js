@@ -1,17 +1,20 @@
 /*
  * vim: ts=2:sw=2:expandtab
  */
+
+"use strict";
+
 const debug = require("debug")("libsignal-service:MessageReceiver");
 const _ = require("lodash");
 const libsignal = require("@throneless/libsignal-protocol");
 const ByteBuffer = require("bytebuffer");
-const EventTarget = require("./event_target.js");
-const Event = require("./event.js");
+const EventTarget = require("./EventTarget.js");
+const Event = require("./Event.js");
 const Worker = require("tiny-worker");
-const createTaskWithTimeout = require("./task_with_timeout.js");
+const createTaskWithTimeout = require("./taskWithTimeout.js");
 const crypto = require("./crypto.js");
 const errors = require("./errors.js");
-const WebSocketResource = require("./websocket-resources.js");
+const WebSocketResource = require("./WebSocketResource.js");
 const protobuf = require("./protobufs.js");
 const Metadata = require("./Metadata.js");
 const Content = protobuf.lookupType("signalservice.Content");
@@ -20,7 +23,7 @@ const Envelope = protobuf.lookupType("signalservice.Envelope");
 const GroupContext = protobuf.lookupType("signalservice.GroupContext");
 const ReceiptMessage = protobuf.lookupType("signalservice.ReceiptMessage");
 const TypingMessage = protobuf.lookupType("signalservice.TypingMessage");
-const { ContactBuffer, GroupBuffer } = require("./contacts_parser.js");
+const { ContactBuffer, GroupBuffer } = protobuf;
 const getGuid = require("uuid/v4");
 
 /* eslint-disable more/no-then */
@@ -28,7 +31,7 @@ const getGuid = require("uuid/v4");
 const WORKER_TIMEOUT = 60 * 1000; // one minute
 const TIMESTAMP_VALIDATION = false; // pending feature
 
-const _utilWorker = new Worker(__dirname + "/util_worker.js");
+const _utilWorker = new Worker(__dirname + "/utilWorker.js");
 const _jobs = Object.create(null);
 const _DEBUG = true;
 let _jobCounter = 0;
@@ -125,18 +128,11 @@ _utilWorker.onmessage = e => {
 };
 
 class MessageReceiver extends EventTarget {
-  constructor(username, password, signalingKey, store, options = {}) {
+  constructor(store, signalingKey, options = {}) {
     super();
     this.count = 0;
 
     this.signalingKey = signalingKey;
-    this.username = username;
-    this.password = password;
-    this.server = this.constructor.WebAPI.connect({ username, password });
-
-    const address = libsignal.SignalProtocolAddress.fromString(username);
-    this.number = address.getName();
-    this.deviceId = address.getDeviceId();
     this.store = store;
     this.calledClose = false;
 
@@ -147,7 +143,15 @@ class MessageReceiver extends EventTarget {
     }
   }
 
-  connect() {
+  async connect() {
+    if (this.server === undefined) {
+      this.number = await this.store.getNumber();
+      this.deviceId = await this.store.getDeviceId();
+      const username = this.number + "." + this.deviceId;
+      const password = await this.store.getPassword();
+      this.server = this.constructor.WebAPI.connect({ username, password });
+    }
+
     if (this.calledClose) {
       return;
     }
@@ -294,13 +298,13 @@ class MessageReceiver extends EventTarget {
     }
 
     promise = promise
-      .then(plaintext => {
+      .then(async plaintext => {
         const envelope = Envelope.decode(new Uint8Array(plaintext));
         // After this point, decoding errors are not the server's
         //   fault, and we should handle them gracefully and tell the
         //   user they received an invalid message
 
-        if (this.isBlocked(envelope.source)) {
+        if (await this.isBlocked(envelope.source)) {
           return request.respond(200, "OK");
         }
 
@@ -549,7 +553,7 @@ class MessageReceiver extends EventTarget {
 
   async updateCache(envelope, plaintext) {
     const { id } = envelope;
-    const item = await this.store.getUnprocessed(id);
+    const item = await this.store.getAllUnprocessed(id);
     if (!item) {
       debug(`updateCache: Didn't find item ${id} in cache to update`);
       return null;
@@ -565,7 +569,7 @@ class MessageReceiver extends EventTarget {
       item.decrypted = await this.arrayBufferToString(plaintext);
     }
 
-    return this.store.addDecryptedDataUnprocessed(item.id, item);
+    return this.store.updateUnprocessedWithData(item.id, item);
   }
 
   removeFromCache(envelope) {
@@ -685,7 +689,7 @@ class MessageReceiver extends EventTarget {
     return plaintext;
   }
 
-  decrypt(envelope, ciphertext) {
+  async decrypt(envelope, ciphertext) {
     const { serverTrustRoot } = this;
 
     let promise;
@@ -694,7 +698,7 @@ class MessageReceiver extends EventTarget {
       envelope.sourceDevice
     );
 
-    const ourNumber = this.store.userGetNumber();
+    const ourNumber = await this.store.getNumber();
     const number = address.toString().split(".")[0];
     const options = {};
 
@@ -709,10 +713,10 @@ class MessageReceiver extends EventTarget {
       options
     );
     const secretSessionCipher = new Metadata.SecretSessionCipher(this.store);
-
+    const deviceId = await this.store.getDeviceId();
     const me = {
       number: ourNumber,
-      deviceId: parseInt(this.store.userGetDeviceId(), 10)
+      deviceId: parseInt(deviceId, 10)
     };
 
     switch (envelope.type) {
@@ -740,7 +744,7 @@ class MessageReceiver extends EventTarget {
             me
           )
           .then(
-            result => {
+            async result => {
               const { isMe, sender, content } = result;
 
               // We need to drop incoming messages from ourself since server can't
@@ -749,7 +753,7 @@ class MessageReceiver extends EventTarget {
                 return { isMe: true };
               }
 
-              if (this.isBlocked(sender.getName())) {
+              if (await this.isBlocked(sender.getName())) {
                 debug(
                   "Dropping blocked message after sealed sender decryption"
                 );
@@ -772,13 +776,13 @@ class MessageReceiver extends EventTarget {
               //   decrypt methods used above.
               return this.unpad(content);
             },
-            error => {
+            async error => {
               const { sender } = error || {};
 
               if (sender) {
                 const originalSource = envelope.source;
 
-                if (this.isBlocked(sender.getName())) {
+                if (await this.isBlocked(sender.getName())) {
                   debug(
                     "Dropping blocked message with error after sealed sender decryption"
                   );
@@ -881,10 +885,10 @@ class MessageReceiver extends EventTarget {
       p = this.handleEndSession(destination);
     }
     return p.then(() =>
-      this.processDecrypted(envelope, msg, this.number).then(message => {
+      this.processDecrypted(envelope, msg, this.number).then(async message => {
         const groupId = message.group && message.group.id;
-        const isBlocked = this.isGroupBlocked(groupId);
-        const isMe = envelope.source === this.store.userGetNumber();
+        const isBlocked = await this.isGroupBlocked(groupId);
+        const isMe = envelope.source === (await this.store.getNumber());
         const isLeavingGroup = Boolean(
           message.group && message.group.type === GroupContext.Type.QUIT
         );
@@ -924,35 +928,37 @@ class MessageReceiver extends EventTarget {
       p = this.handleEndSession(envelope.source);
     }
     return p.then(() =>
-      this.processDecrypted(envelope, msg, envelope.source).then(message => {
-        const groupId = message.group && message.group.id;
-        const isBlocked = this.isGroupBlocked(groupId);
-        const isMe = envelope.source === this.store.userGetNumber();
-        const isLeavingGroup = Boolean(
-          message.group && message.group.type === GroupContext.Type.QUIT
-        );
-
-        if (groupId && isBlocked && !(isMe && isLeavingGroup)) {
-          debug(
-            `Message ${this.getEnvelopeId(
-              envelope
-            )} ignored; destined for blocked group`
+      this.processDecrypted(envelope, msg, envelope.source).then(
+        async message => {
+          const groupId = message.group && message.group.id;
+          const isBlocked = await this.isGroupBlocked(groupId);
+          const isMe = envelope.source === (await this.store.getNumber());
+          const isLeavingGroup = Boolean(
+            message.group && message.group.type === GroupContext.Type.QUIT
           );
-          return this.removeFromCache(envelope);
-        }
 
-        const ev = new Event("message");
-        ev.confirm = this.removeFromCache.bind(this, envelope);
-        ev.data = {
-          source: envelope.source,
-          sourceDevice: envelope.sourceDevice,
-          timestamp: envelope.timestamp.toNumber(),
-          receivedAt: envelope.receivedAt,
-          unidentifiedDeliveryReceived: envelope.unidentifiedDeliveryReceived,
-          message
-        };
-        return this.dispatchAndWait(ev);
-      })
+          if (groupId && isBlocked && !(isMe && isLeavingGroup)) {
+            debug(
+              `Message ${this.getEnvelopeId(
+                envelope
+              )} ignored; destined for blocked group`
+            );
+            return this.removeFromCache(envelope);
+          }
+
+          const ev = new Event("message");
+          ev.confirm = this.removeFromCache.bind(this, envelope);
+          ev.data = {
+            source: envelope.source,
+            sourceDevice: envelope.sourceDevice,
+            timestamp: envelope.timestamp.toNumber(),
+            receivedAt: envelope.receivedAt,
+            unidentifiedDeliveryReceived: envelope.unidentifiedDeliveryReceived,
+            message
+          };
+          return this.dispatchAndWait(ev);
+        }
+      )
     );
   }
 
@@ -1006,6 +1012,7 @@ class MessageReceiver extends EventTarget {
   }
 
   handleReceiptMessage(envelope, receiptMessage) {
+    debug("receipt message from", this.getEnvelopeId(envelope));
     const results = [];
     if (receiptMessage.type === ReceiptMessage.Type.DELIVERY) {
       for (let i = 0; i < receiptMessage.timestamp.length; i += 1) {
@@ -1034,6 +1041,7 @@ class MessageReceiver extends EventTarget {
   }
 
   handleTypingMessage(envelope, typingMessage) {
+    debug("typing message from", this.getEnvelopeId(envelope));
     const ev = new Event("typing");
 
     this.removeFromCache(envelope);
@@ -1073,6 +1081,7 @@ class MessageReceiver extends EventTarget {
   }
 
   handleSyncMessage(envelope, syncMessage) {
+    debug("sync message from", this.getEnvelopeId(envelope));
     if (envelope.source !== this.number) {
       throw new Error("Received sync message from another number");
     }
@@ -1227,32 +1236,38 @@ class MessageReceiver extends EventTarget {
 
   handleBlocked(envelope, blocked) {
     debug("Setting these numbers as blocked:", blocked.numbers);
-    this.store.put("blocked", blocked.numbers);
+    this.store.setBlocked(blocked.numbers);
 
     const groupIds = _.map(blocked.groupIds, groupId => groupId.toBinary());
     debug(
       "Setting these groups as blocked:",
       groupIds.map(groupId => `group(${groupId})`)
     );
-    this.store.put("blocked-groups", groupIds);
+    this.store.setBlockedGroups(groupIds);
 
     return this.removeFromCache(envelope);
   }
 
-  isBlocked(number) {
-    return this.store.get("blocked", []).indexOf(number) >= 0;
+  async isBlocked(number) {
+    const blocklist = await this.store.getBlocked();
+    return blocklist.indexOf(number) >= 0;
   }
 
-  isGroupBlocked(groupId) {
-    return this.store.get("blocked-groups", []).indexOf(groupId) >= 0;
+  async isGroupBlocked(groupId) {
+    const blocklist = await this.store.getBlockedGroups();
+    return blocklist.indexOf(groupId) >= 0;
   }
 
   cleanAttachment(attachment) {
     return {
       ..._.omit(attachment, "thumbnail"),
       id: attachment.id.toString(),
-      key: attachment.key ? attachment.key.toString("base64") : null,
-      digest: attachment.digest ? attachment.digest.toString("base64") : null
+      key: attachment.key
+        ? ByteBuffer.wrap(attachment.key, "base64").toString("base64")
+        : null,
+      digest: attachment.digest
+        ? ByteBuffer.wrap(attachment.digest, "base64").toString("base64")
+        : null
     };
   }
 

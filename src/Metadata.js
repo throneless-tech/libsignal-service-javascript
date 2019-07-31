@@ -1,4 +1,8 @@
-/* global libsignal, textsecure */
+/*
+ * vim: ts=2:sw=2:expandtab
+ */
+
+"use strict";
 
 /* eslint-disable no-bitwise */
 
@@ -194,7 +198,7 @@ function _createUnidentifiedSenderMessage(
   const versionBytes = new Uint8Array([
     intsToByteHighAndLow(CIPHERTEXT_VERSION, CIPHERTEXT_VERSION)
   ]);
-  const unidentifiedSenderMessage = new UnidentifiedSenderMessage();
+  const unidentifiedSenderMessage = UnidentifiedSenderMessage.create();
 
   unidentifiedSenderMessage.encryptedMessage = encryptedMessage;
   unidentifiedSenderMessage.encryptedStatic = encryptedStatic;
@@ -467,7 +471,7 @@ class SecretSessionCipher {
     return cipher.getRemoteRegistrationId();
   }
 
-  // Used by outgoing_message.js
+  // Used by OutgoingMessage.js
   closeOpenSessionForDevice(remoteAddress) {
     const { SessionCipher } = this;
     const signalProtocolStore = this.storage;

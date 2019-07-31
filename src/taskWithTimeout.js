@@ -1,3 +1,9 @@
+/*
+ * vim: ts=2:sw=2:expandtab
+ */
+
+"use strict";
+
 /* eslint-disable more/no-then */
 const debug = require("debug")("libsignal-service:TaskWithTimeout");
 

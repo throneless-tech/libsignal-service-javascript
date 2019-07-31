@@ -1,14 +1,16 @@
 "use strict";
-var assert = require("chai").assert;
-var assertEqualArrayBuffers = require("./_test.js").assertEqualArrayBuffers;
-var crypto = require("../src/crypto.js");
-var ProtocolStore = require("./InMemorySignalProtocolStore.js");
+const assert = require("chai").assert;
+const assertEqualArrayBuffers = require("./_test.js").assertEqualArrayBuffers;
+const crypto = require("../src/crypto.js");
+const storage = require("./InMemorySignalProtocolStore.js");
+const Signal = require("../src/index.js");
 
 describe("SignalProtocolStore", () => {
   before(() => {
-    store.clear();
+    store.removeAllData();
   });
-  const store = new ProtocolStore();
+  const store = new Signal.ProtocolStore(new storage());
+  store.load();
   const identifier = "+5558675309";
   const identityKey = {
     pubKey: crypto.getRandomBytes(33),
@@ -19,13 +21,13 @@ describe("SignalProtocolStore", () => {
     privKey: crypto.getRandomBytes(32)
   };
   it("retrieves my registration id", async () => {
-    store.put("registrationId", 1337);
+    store.setLocalRegistrationId(1337);
 
     const reg = await store.getLocalRegistrationId();
     assert.strictEqual(reg, 1337);
   });
   it("retrieves my identity key", async () => {
-    store.put("identityKey", identityKey);
+    store.setIdentityKeyPair(identityKey);
     const key = await store.getIdentityKeyPair();
     assertEqualArrayBuffers(key.pubKey, identityKey.pubKey);
     assertEqualArrayBuffers(key.privKey, identityKey.privKey);
@@ -39,14 +41,18 @@ describe("SignalProtocolStore", () => {
     const newIdentity = crypto.getRandomBytes(33);
     await store.saveIdentity(identifier, testKey.pubKey);
 
-    const trusted = await store.isTrustedIdentity(identifier, newIdentity);
+    const trusted = await store.isTrustedIdentity(identifier, newIdentity, 1);
     if (trusted) {
       throw new Error("Allowed to overwrite identity key");
     }
   });
   it("returns whether a key is untrusted", async () => {
     await store.saveIdentity(identifier, testKey.pubKey);
-    const trusted = await store.isTrustedIdentity(identifier, testKey.pubKey);
+    const trusted = await store.isTrustedIdentity(
+      identifier,
+      testKey.pubKey,
+      1
+    );
 
     if (!trusted) {
       throw new Error("Allowed to overwrite identity key");

@@ -1,6 +1,7 @@
 /*
  * vim: ts=2:sw=2:expandtab
  */
+
 "use strict";
 
 const libphonenumber = require("libphonenumber-js");

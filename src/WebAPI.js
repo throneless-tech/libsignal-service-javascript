@@ -1,8 +1,15 @@
+/*
+ * vim: ts=2:sw=2:expandtab
+ */
+
+"use strict";
+
 const WebSocket = require("websocket").w3cwebsocket;
 const debug = require("debug")("libsignal-service:WebAPI");
 const fetch = require("node-fetch");
 const ProxyAgent = require("proxy-agent");
 const { Agent } = require("https");
+const getGuid = require("uuid/v4");
 
 const is = require("@sindresorhus/is");
 //const { redactPackId } = require("./stickers");
@@ -237,7 +244,7 @@ function _promiseAjax(providedUrl, options) {
     if (unauthenticated) {
       if (!accessKey) {
         throw new Error(
-          "_promiseAjax: mode is aunathenticated, but accessKey was not provided"
+          "_promiseAjax: mode is unauthenticated, but accessKey was not provided"
         );
       }
       // Access key is already a Base64 string

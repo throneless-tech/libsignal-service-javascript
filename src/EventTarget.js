@@ -1,12 +1,12 @@
-/* global window, Event, textsecure */
-
 /*
- * Implements EventTarget
- * https://developer.mozilla.org/en-US/docs/Web/API/EventTarget
+ * vim: ts=2:sw=2:expandtab
  */
+
+"use strict";
+
 // eslint-disable-next-line func-names
 
-const Event = require("./event.js");
+const Event = require("./Event.js");
 
 class EventTarget {
   constructor() {}

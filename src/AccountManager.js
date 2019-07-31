@@ -1,7 +1,13 @@
+/*
+ * vim: ts=2:sw=2:expandtab
+ */
+
+"use strict";
+
 const btoa = require("btoa");
 const debug = require("debug")("libsignal-service:AccountManager");
-const EventTarget = require("./event_target.js");
-const Event = require("./event.js");
+const EventTarget = require("./EventTarget.js");
+const Event = require("./Event.js");
 const libsignal = require("@throneless/libsignal-protocol");
 const protobuf = require("./protobufs.js");
 const ProvisionEnvelope = protobuf.lookupType(
@@ -11,9 +17,9 @@ const DeviceName = protobuf.lookupType("signalservice.DeviceName");
 const ProvisioningUuid = protobuf.lookupType("signalservice.ProvisioningUuid");
 const crypto = require("./crypto.js");
 const provisioning = require("./ProvisioningCipher.js");
-const WebSocketResource = require("./websocket-resources.js");
+const WebSocketResource = require("./WebSocketResource.js");
 const libphonenumber = require("./libphonenumber-util.js");
-const createTaskWithTimeout = require("./task_with_timeout.js");
+const createTaskWithTimeout = require("./taskWithTimeout.js");
 const helpers = require("./helpers.js");
 
 const ARCHIVE_AGE = 7 * 24 * 60 * 60 * 1000;
@@ -42,16 +48,17 @@ class AccountManager extends EventTarget {
     super(username, password, store);
     this.server = this.constructor.WebAPI.connect({ username, password });
     this.store = store;
+    this.username = username;
     this.password = password;
     this.pending = Promise.resolve();
   }
 
-  requestVoiceVerification(number) {
-    return this.server.requestVerificationVoice(number);
+  requestVoiceVerification() {
+    return this.server.requestVerificationVoice(this.username);
   }
 
-  requestSMSVerification(number) {
-    return this.server.requestVerificationSMS(number);
+  requestSMSVerification() {
+    return this.server.requestVerificationSMS(this.username);
   }
 
   async encryptDeviceName(name, providedIdentityKey) {
@@ -91,28 +98,28 @@ class AccountManager extends EventTarget {
   }
 
   async maybeUpdateDeviceName() {
-    const isNameEncrypted = this.store.userGetDeviceNameEncrypted();
+    const isNameEncrypted = this.store.getDeviceNameEncrypted();
     if (isNameEncrypted) {
       return;
     }
-    const deviceName = await this.store.userGetDeviceName();
+    const deviceName = await this.store.getDeviceName();
     const base64 = await this.encryptDeviceName(deviceName);
 
     await this.server.updateDeviceName(base64);
   }
 
   async deviceNameIsEncrypted() {
-    await this.store.userSetDeviceNameEncrypted();
+    await this.store.setDeviceNameEncrypted();
   }
 
   async maybeDeleteSignalingKey() {
-    const key = await this.store.UserGetSignalingKey();
+    const key = await this.store.getSignalingKey();
     if (key) {
       await this.server.removeSignalingKey();
     }
   }
 
-  registerSingleDevice(number, verificationCode) {
+  registerSingleDevice(verificationCode) {
     const registerKeys = this.server.registerKeys.bind(this.server);
     const createAccount = this.createAccount.bind(this);
     const clearSessionsAndPreKeys = this.clearSessionsAndPreKeys.bind(this);
@@ -126,7 +133,7 @@ class AccountManager extends EventTarget {
           const accessKey = await crypto.deriveAccessKey(profileKey);
 
           return createAccount(
-            number,
+            this.username,
             verificationCode,
             identityKeyPair,
             profileKey,
@@ -138,7 +145,7 @@ class AccountManager extends EventTarget {
             .then(clearSessionsAndPreKeys)
             .then(generateKeys)
             .then(keys => registerKeys(keys).then(() => confirmKeys(keys)))
-            .then(() => registrationDone(number));
+            .then(() => registrationDone(this.username));
         }
       )
     );
@@ -252,7 +259,7 @@ class AccountManager extends EventTarget {
 
   rotateSignedPreKey() {
     return this.queueTask(() => {
-      const signedKeyId = this.store.get("signedKeyId", 1);
+      const signedKeyId = this.store.getSignedKeyId();
       if (typeof signedKeyId !== "number") {
         throw new Error("Invalid signedKeyId");
       }
@@ -276,7 +283,7 @@ class AccountManager extends EventTarget {
           }
           debug("Saving new signed prekey", res.keyId);
           return Promise.all([
-            this.store.put("signedKeyId", signedKeyId + 1),
+            this.store.setSignedKeyId(signedKeyId + 1),
             this.store.storeSignedPreKey(res.keyId, res.keyPair),
             server.setSignedPreKey({
               keyId: res.keyId,
@@ -288,7 +295,7 @@ class AccountManager extends EventTarget {
               const confirmed = true;
               debug("Confirming new signed prekey", res.keyId);
               return Promise.all([
-                this.store.remove("signedKeyRotationRejected"),
+                this.store.removeSignedKeyRotationRejected(),
                 this.store.storeSignedPreKey(res.keyId, res.keyPair, confirmed)
               ]);
             })
@@ -303,9 +310,8 @@ class AccountManager extends EventTarget {
             e.code >= 400 &&
             e.code <= 599
           ) {
-            const rejections =
-              1 + this.store.get("signedKeyRotationRejected", 0);
-            this.store.put("signedKeyRotationRejected", rejections);
+            const rejections = 1 + this.store.getSignedKeyRotationRejected();
+            this.store.setSignedKeyRotationRejected(rejections);
             debug("Signed key rotation rejected count:", rejections);
           } else {
             throw e;
@@ -400,7 +406,7 @@ class AccountManager extends EventTarget {
     const { accessKey } = options;
     const registrationId = libsignal.KeyHelper.generateRegistrationId();
 
-    const previousNumber = getNumber(this.store.get("number_id"));
+    const previousNumber = this.store.getNumber();
 
     const encryptedDeviceName = await this.encryptDeviceName(
       deviceName,
@@ -433,17 +439,7 @@ class AccountManager extends EventTarget {
       }
     }
 
-    await Promise.all([
-      this.store.remove("identityKey"),
-      this.store.remove("password"),
-      this.store.remove("registrationId"),
-      this.store.remove("number_id"),
-      this.store.remove("device_name"),
-      this.store.remove("regionCode"),
-      this.store.remove("userAgent"),
-      this.store.remove("profileKey"),
-      this.store.remove("read-receipts-setting")
-    ]);
+    await Promise.all([this.store.removeAllConfiguration()]);
 
     // update our own identity key, which may have changed
     // if we're relinking after a reinstall on the master device
@@ -456,24 +452,24 @@ class AccountManager extends EventTarget {
       nonblockingApproval: true
     });
 
-    await this.store.put("identityKey", identityKeyPair);
-    await this.store.put("password", this.password);
-    await this.store.put("registrationId", registrationId);
+    await this.store.setIdentityKeyPair(identityKeyPair);
+    await this.store.setPassword(this.password);
+    await this.store.setLocalRegistrationId(registrationId);
     if (profileKey) {
-      await this.store.put("profileKey", profileKey);
+      await this.store.setProfileKey(profileKey);
     }
     if (userAgent) {
-      await this.store.put("userAgent", userAgent);
+      await this.store.setUserAgent(userAgent);
     }
-    await this.store.put("read-receipt-setting", Boolean(readReceipts));
+    await this.store.setReadReceiptSetting(Boolean(readReceipts));
 
-    await this.store.userSetNumberAndDeviceId(
+    await this.store.setNumberAndDeviceId(
       number,
       response.deviceId || 1,
       deviceName
     );
     const regionCode = libphonenumber.util.getRegionCodeForNumber(number);
-    await this.store.put("regionCode", regionCode);
+    await this.store.setRegionCode(regionCode);
   }
 
   async clearSessionsAndPreKeys() {
@@ -494,13 +490,13 @@ class AccountManager extends EventTarget {
     await this.store.storeSignedPreKey(key.keyId, key.keyPair, confirmed);
   }
 
-  generateKeys(count, providedProgressCallback) {
+  async generateKeys(count, providedProgressCallback) {
     const progressCallback =
       typeof providedProgressCallback === "function"
         ? providedProgressCallback
         : null;
-    const startId = this.store.get("maxPreKeyId", 1);
-    const signedKeyId = this.store.get("signedKeyId", 1);
+    const startId = await this.store.getMaxPreKeyId();
+    const signedKeyId = await this.store.getSignedKeyId();
 
     if (typeof startId !== "number") {
       throw new Error("Invalid maxPreKeyId");
@@ -543,8 +539,8 @@ class AccountManager extends EventTarget {
         )
       );
 
-      this.store.put("maxPreKeyId", startId + count);
-      this.store.put("signedKeyId", signedKeyId + 1);
+      this.store.setMaxPreKeyId(startId + count);
+      this.store.setSignedKeyId(signedKeyId + 1);
       return Promise.all(promises).then(() =>
         // This is primarily for the signed prekey summary it logs out
         this.cleanSignedPreKeys().then(() => result)

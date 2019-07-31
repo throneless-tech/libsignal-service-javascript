@@ -1,6 +1,7 @@
 /*
  * vim: ts=2:sw=2:expandtab
  */
+
 "use strict";
 
 // eslint-disable-next-line func-names

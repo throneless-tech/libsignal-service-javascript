@@ -4,8 +4,8 @@ var ByteBuffer = require("bytebuffer");
 var protobuf = require("../src/protobufs.js");
 var ContactDetails = protobuf.lookupType("signalservice.ContactDetails");
 var GroupDetails = protobuf.lookupType("signalservice.GroupDetails");
-var ContactBuffer = require("../src/contacts_parser.js").ContactBuffer;
-var GroupBuffer = require("../src/contacts_parser.js").GroupBuffer;
+var ContactBuffer = protobuf.ContactBuffer;
+var GroupBuffer = protobuf.GroupBuffer;
 var assertEqualArrayBuffers = require("./_test.js").assertEqualArrayBuffers;
 var helpers = require("../src/helpers.js");
 

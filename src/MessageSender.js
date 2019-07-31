@@ -1,13 +1,17 @@
 /*
  * vim: ts=2:sw=2:expandtab
  */
+
+"use strict";
+
 const debug = require("debug")("libsignal-service:SendMessage");
 const libsignal = require("@throneless/libsignal-protocol");
 const crypto = require("./crypto.js");
 const errors = require("./errors.js");
-const OutgoingMessage = require("./outgoing_message.js");
-const createTaskWithTimeout = require("./task_with_timeout.js");
-const Message = require("./message.js");
+const helpers = require("./helpers.js");
+const OutgoingMessage = require("./OutgoingMessage.js");
+const createTaskWithTimeout = require("./taskWithTimeout.js");
+const Message = require("./Message.js");
 const protobuf = require("./protobufs.js");
 const AttachmentPointer = protobuf.lookupType(
   "signalservice.AttachmentPointer"
@@ -17,10 +21,15 @@ const DataMessage = protobuf.lookupType("signalservice.DataMessage");
 const GroupContext = protobuf.lookupType("signalservice.GroupContext");
 const NullMessage = protobuf.lookupType("signalservice.NullMessage");
 const ReceiptMessage = protobuf.lookupType("signalservice.ReceiptMessage");
+const SyncMessage = protobuf.lookupType("signalservice.SyncMessage");
+const SyncMessageRead = protobuf.lookupType("signalservice.SyncMessage.Read");
 const SyncMessageRequest = protobuf.lookupType(
   "signalservice.SyncMessage.Request"
 );
 const SyncMessageSent = protobuf.lookupType("signalservice.SyncMessage.Sent");
+const SyncMessageStickerPackOperation = protobuf.lookupType(
+  "signalservice.SyncMessage.StickerPackOperation"
+);
 const TypingMessage = protobuf.lookupType("signalservice.TypingMessage");
 const Verified = protobuf.lookupType("signalservice.Verified");
 /* eslint-disable more/no-then, no-bitwise */
@@ -40,10 +49,17 @@ function stringToArrayBuffer(str) {
 }
 
 class MessageSender {
-  constructor(username, password, store) {
-    this.server = this.constructor.WebAPI.connect({ username, password });
+  constructor(store) {
     this.pendingMessages = {};
     this.store = store;
+  }
+
+  async connect() {
+    if (this.server === undefined) {
+      const username = await this.store.getNumber();
+      const password = await this.store.getPassword();
+      this.server = this.constructor.WebAPI.connect({ username, password });
+    }
   }
 
   _getAttachmentSizeBucket(size) {
@@ -83,18 +99,18 @@ class MessageSender {
     }
 
     const padded = this.getPaddedAttachment(data, shouldPad);
-    const key = libsignal.crypto.getRandomBytes(64);
-    const iv = libsignal.crypto.getRandomBytes(16);
+    const key = crypto.getRandomBytes(64);
+    const iv = crypto.getRandomBytes(16);
 
     const result = await crypto.encryptAttachment(padded, key, iv);
     const id = await this.server.putAttachment(result.ciphertext);
 
-    const proto = new AttachmentPointer();
+    const proto = AttachmentPointer.create();
     proto.id = id;
     proto.contentType = attachment.contentType;
-    proto.key = key;
+    proto.key = new Uint8Array(key);
     proto.size = attachment.size;
-    proto.digest = result.digest;
+    proto.digest = new Uint8Array(result.digest);
 
     if (attachment.fileName) {
       proto.fileName = attachment.fileName;
@@ -201,6 +217,7 @@ class MessageSender {
   }
 
   uploadAttachments(message) {
+    debug("Message attachments: ", message.attachments);
     return Promise.all(
       message.attachments.map(this.makeAttachmentPointer.bind(this))
     )
@@ -291,7 +308,11 @@ class MessageSender {
     });
   }
 
-  sendMessage(attrs, options) {
+  async sendMessage(attrs, options) {
+    if (!attrs.timestamp) {
+      attrs.timestamp = Date.now();
+    }
+    attrs.profileKey = await this.store.getProfileKey();
     const message = new Message(attrs);
     const silent = false;
 
@@ -322,7 +343,7 @@ class MessageSender {
     );
   }
 
-  sendMessageProto(
+  async sendMessageProto(
     timestamp,
     numbers,
     message,
@@ -330,7 +351,8 @@ class MessageSender {
     silent,
     options = {}
   ) {
-    const rejections = this.store.get("signedKeyRotationRejected", 0);
+    debug("message to send: ", message);
+    const rejections = await this.store.getSignedKeyRotationRejected();
     if (rejections > 5) {
       throw new errors.SignedPreKeyRotationError(
         numbers,
@@ -397,19 +419,19 @@ class MessageSender {
   }
 
   createSyncMessage() {
-    const syncMessage = new SyncMessage();
+    const syncMessage = SyncMessage.create();
 
     // Generate a random int from 1 and 512
-    const buffer = libsignal.crypto.getRandomBytes(1);
+    const buffer = crypto.getRandomBytes(1);
     const paddingLength = (new Uint8Array(buffer)[0] & 0x1ff) + 1;
 
     // Generate a random padding buffer of the chosen size
-    syncMessage.padding = libsignal.crypto.getRandomBytes(paddingLength);
+    syncMessage.padding = crypto.getRandomBytes(paddingLength);
 
     return syncMessage;
   }
 
-  sendSyncMessage(
+  async sendSyncMessage(
     encodedDataMessage,
     timestamp,
     destination,
@@ -419,14 +441,14 @@ class MessageSender {
     isUpdate = false,
     options
   ) {
-    const myNumber = this.store.userGetNumber();
-    const myDevice = this.store.userGetDeviceId();
+    const myNumber = await this.store.getNumber();
+    const myDevice = await this.store.getDeviceId();
     if (myDevice === 1 || myDevice === "1") {
       return Promise.resolve();
     }
 
     const dataMessage = DataMessage.decode(encodedDataMessage);
-    const sentMessage = new SyncMessage.Sent();
+    const sentMessage = SyncMessageSent.create();
     sentMessage.timestamp = timestamp;
     sentMessage.message = dataMessage;
     if (destination) {
@@ -453,7 +475,7 @@ class MessageSender {
     //   number we sent to.
     if (sentTo && sentTo.length) {
       sentMessage.unidentifiedStatus = sentTo.map(number => {
-        const status = new SyncMessage.Sent.UnidentifiedDeliveryStatus();
+        const status = SyncMessageSent.UnidentifiedDeliveryStatus.create();
         status.destination = number;
         status.unidentified = Boolean(unidentifiedLookup[number]);
         return status;
@@ -462,7 +484,7 @@ class MessageSender {
 
     const syncMessage = this.createSyncMessage();
     syncMessage.sent = sentMessage;
-    const contentMessage = new Content();
+    const contentMessage = Content.create();
     contentMessage.syncMessage = syncMessage;
 
     const silent = true;
@@ -492,15 +514,15 @@ class MessageSender {
     return this.server.getStickerPackManifest(packId);
   }
 
-  sendRequestConfigurationSyncMessage(options) {
-    const myNumber = this.store.userGetNumber();
-    const myDevice = this.store.userGetDeviceId();
+  async sendRequestConfigurationSyncMessage(options) {
+    const myNumber = await this.store.getNumber();
+    const myDevice = await this.store.getDeviceId();
     if (myDevice !== 1 && myDevice !== "1") {
-      const request = new SyncMessage.Request();
-      request.type = SyncMessage.Request.Type.CONFIGURATION;
+      const request = SyncMessageRequest.create();
+      request.type = SyncMessageRequest.Type.CONFIGURATION;
       const syncMessage = this.createSyncMessage();
       syncMessage.request = request;
-      const contentMessage = new Content();
+      const contentMessage = Content.create();
       contentMessage.syncMessage = syncMessage;
 
       const silent = true;
@@ -515,15 +537,15 @@ class MessageSender {
 
     return Promise.resolve();
   }
-  sendRequestGroupSyncMessage(options) {
-    const myNumber = this.store.userGetNumber();
-    const myDevice = this.store.userGetDeviceId();
+  async sendRequestGroupSyncMessage(options) {
+    const myNumber = await this.store.getNumber();
+    const myDevice = await this.store.getDeviceId();
     if (myDevice !== 1 && myDevice !== "1") {
-      const request = new SyncMessage.Request();
-      request.type = SyncMessage.Request.Type.GROUPS;
+      const request = SyncMessageRequest.create();
+      request.type = SyncMessageRequest.Type.GROUPS;
       const syncMessage = this.createSyncMessage();
       syncMessage.request = request;
-      const contentMessage = new Content();
+      const contentMessage = Content.create();
       contentMessage.syncMessage = syncMessage;
 
       const silent = true;
@@ -539,15 +561,15 @@ class MessageSender {
     return Promise.resolve();
   }
 
-  sendRequestContactSyncMessage(options) {
-    const myNumber = this.store.userGetNumber();
-    const myDevice = this.store.userGetDeviceId();
+  async sendRequestContactSyncMessage(options) {
+    const myNumber = await this.store.getNumber();
+    const myDevice = await this.store.getDeviceId();
     if (myDevice !== 1 && myDevice !== "1") {
-      const request = new SyncMessage.Request();
-      request.type = SyncMessage.Request.Type.CONTACTS;
+      const request = SyncMessageRequest.create();
+      request.type = SyncMessageRequest.Type.CONTACTS;
       const syncMessage = this.createSyncMessage();
       syncMessage.request = request;
-      const contentMessage = new Content();
+      const contentMessage = Content.create();
       contentMessage.syncMessage = syncMessage;
 
       const silent = true;
@@ -569,7 +591,7 @@ class MessageSender {
 
     // We don't want to send typing messages to our other devices, but we will
     //   in the group case.
-    const myNumber = this.store.userGetNumber();
+    const myNumber = await this.store.getNumber();
     if (recipientId && myNumber === recipientId) {
       return null;
     }
@@ -588,12 +610,12 @@ class MessageSender {
     const action = isTyping ? ACTION_ENUM.STARTED : ACTION_ENUM.STOPPED;
     const finalTimestamp = timestamp || Date.now();
 
-    const typingMessage = new TypingMessage();
+    const typingMessage = TypingMessage.create();
     typingMessage.groupId = groupIdBuffer;
     typingMessage.action = action;
     typingMessage.timestamp = finalTimestamp;
 
-    const contentMessage = new Content();
+    const contentMessage = Content.create();
     contentMessage.typingMessage = typingMessage;
 
     const silent = true;
@@ -611,18 +633,18 @@ class MessageSender {
     );
   }
 
-  sendDeliveryReceipt(recipientId, timestamp, options) {
-    const myNumber = this.store.userGetNumber();
-    const myDevice = this.store.userGetDeviceId();
+  async sendDeliveryReceipt(recipientId, timestamp, options) {
+    const myNumber = await this.store.getNumber();
+    const myDevice = await this.store.getDeviceId();
     if (myNumber === recipientId && (myDevice === 1 || myDevice === "1")) {
       return Promise.resolve();
     }
 
-    const receiptMessage = new ReceiptMessage();
+    const receiptMessage = ReceiptMessage.create();
     receiptMessage.type = ReceiptMessage.Type.DELIVERY;
     receiptMessage.timestamp = [timestamp];
 
-    const contentMessage = new Content();
+    const contentMessage = Content.create();
     contentMessage.receiptMessage = receiptMessage;
 
     const silent = true;
@@ -636,11 +658,11 @@ class MessageSender {
   }
 
   sendReadReceipts(sender, timestamps, options) {
-    const receiptMessage = new ReceiptMessage();
+    const receiptMessage = ReceiptMessage.create();
     receiptMessage.type = ReceiptMessage.Type.READ;
     receiptMessage.timestamp = timestamps;
 
-    const contentMessage = new Content();
+    const contentMessage = Content.create();
     contentMessage.receiptMessage = receiptMessage;
 
     const silent = true;
@@ -652,19 +674,19 @@ class MessageSender {
       options
     );
   }
-  syncReadMessages(reads, options) {
-    const myNumber = this.store.userGetNumber();
-    const myDevice = this.store.userGetDeviceId();
+  async syncReadMessages(reads, options) {
+    const myNumber = await this.store.getNumber();
+    const myDevice = await this.store.getDeviceId();
     if (myDevice !== 1 && myDevice !== "1") {
       const syncMessage = this.createSyncMessage();
       syncMessage.read = [];
       for (let i = 0; i < reads.length; i += 1) {
-        const read = new SyncMessage.Read();
+        const read = SyncMessageRead.create();
         read.timestamp = reads[i].timestamp;
         read.sender = reads[i].sender;
         syncMessage.read.push(read);
       }
-      const contentMessage = new Content();
+      const contentMessage = Content.create();
       contentMessage.syncMessage = syncMessage;
 
       const silent = true;
@@ -680,18 +702,18 @@ class MessageSender {
     return Promise.resolve();
   }
   async sendStickerPackSync(operations, options) {
-    const myDevice = this.store.userGetDeviceId();
+    const myDevice = await this.store.getDeviceId();
     if (myDevice === 1 || myDevice === "1") {
       return null;
     }
 
-    const myNumber = this.store.userGetNumber();
-    const ENUM = SyncMessage.StickerPackOperation.Type;
+    const myNumber = await this.store.getNumber();
+    const ENUM = SyncMessageStickerPackOperation.Type;
 
     const packOperations = operations.map(item => {
       const { packId, packKey, installed } = item;
 
-      const operation = new SyncMessage.StickerPackOperation();
+      const operation = SyncMessageStickerPackOperation.create();
       operation.packId = hexStringToArrayBuffer(packId);
       operation.packKey = base64ToArrayBuffer(packKey);
       operation.type = installed ? ENUM.INSTALL : ENUM.REMOVE;
@@ -702,7 +724,7 @@ class MessageSender {
     const syncMessage = this.createSyncMessage();
     syncMessage.stickerPackOperation = packOperations;
 
-    const contentMessage = new Content();
+    const contentMessage = Content.create();
     contentMessage.syncMessage = syncMessage;
 
     const silent = true;
@@ -714,9 +736,9 @@ class MessageSender {
       options
     );
   }
-  syncVerification(destination, state, identityKey, options) {
-    const myNumber = this.store.userGetNumber();
-    const myDevice = this.store.userGetDeviceId();
+  async syncVerification(destination, state, identityKey, options) {
+    const myNumber = await this.store.getNumber();
+    const myDevice = await this.store.getDeviceId();
     const now = Date.now();
 
     if (myDevice === 1 || myDevice === "1") {
@@ -724,16 +746,16 @@ class MessageSender {
     }
 
     // First send a null message to mask the sync message.
-    const nullMessage = new NullMessage();
+    const nullMessage = NullMessage.create();
 
     // Generate a random int from 1 and 512
-    const buffer = libsignal.crypto.getRandomBytes(1);
+    const buffer = crypto.getRandomBytes(1);
     const paddingLength = (new Uint8Array(buffer)[0] & 0x1ff) + 1;
 
     // Generate a random padding buffer of the chosen size
-    nullMessage.padding = libsignal.crypto.getRandomBytes(paddingLength);
+    nullMessage.padding = crypto.getRandomBytes(paddingLength);
 
-    const contentMessage = new Content();
+    const contentMessage = Content.create();
     contentMessage.nullMessage = nullMessage;
 
     // We want the NullMessage to look like a normal outgoing message; not silent
@@ -747,7 +769,7 @@ class MessageSender {
     );
 
     return promise.then(() => {
-      const verified = new Verified();
+      const verified = Verified.create();
       verified.state = state;
       verified.destination = destination;
       verified.identityKey = identityKey;
@@ -756,7 +778,7 @@ class MessageSender {
       const syncMessage = this.createSyncMessage();
       syncMessage.verified = verified;
 
-      const secondMessage = new Content();
+      const secondMessage = Content.create();
       secondMessage.syncMessage = syncMessage;
 
       const innerSilent = true;
@@ -770,8 +792,13 @@ class MessageSender {
     });
   }
 
-  sendGroupProto(providedNumbers, proto, timestamp = Date.now(), options = {}) {
-    const me = this.store.userGetNumber();
+  async sendGroupProto(
+    providedNumbers,
+    proto,
+    timestamp = Date.now(),
+    options = {}
+  ) {
+    const me = await this.store.getNumber();
     const numbers = providedNumbers.filter(number => number !== me);
     if (numbers.length === 0) {
       return Promise.resolve({
@@ -779,14 +806,18 @@ class MessageSender {
         failoverNumbers: [],
         errors: [],
         unidentifiedDeliveries: [],
-        dataMessage: proto.toArrayBuffer()
+        dataMessage: helpers.convertToArrayBuffer(
+          DataMessage.encode(proto).finish()
+        )
       });
     }
 
     return new Promise((resolve, reject) => {
       const silent = true;
       const callback = res => {
-        res.dataMessage = proto.toArrayBuffer();
+        res.dataMessage = helpers.convertToArrayBuffer(
+          DataMessage.encode(proto).finish()
+        );
         if (res.errors.length > 0) {
           reject(res);
         } else {
@@ -814,7 +845,6 @@ class MessageSender {
     sticker,
     timestamp,
     expireTimer,
-    profileKey,
     flags
   ) {
     const attributes = {
@@ -826,7 +856,6 @@ class MessageSender {
       preview,
       sticker,
       expireTimer,
-      profileKey,
       flags
     };
 
@@ -834,6 +863,10 @@ class MessageSender {
   }
 
   async getMessageProtoObj(attributes) {
+    if (!attrs.timestamp) {
+      attrs.timestamp = Date.now();
+    }
+    attrs.profileKey = await this.store.getProfileKey();
     const message = new Message(attributes);
     await Promise.all([
       this.uploadAttachments(message),
@@ -845,38 +878,38 @@ class MessageSender {
     return message.toArrayBuffer();
   }
 
-  sendMessageToNumber(
-    number,
-    messageText,
-    attachments,
-    quote,
-    preview,
-    sticker,
-    timestamp,
-    expireTimer,
-    profileKey,
-    options
+  async sendMessageToNumber(
+    {
+      number,
+      body = "",
+      attachments = [],
+      quote,
+      preview,
+      sticker,
+      timestamp,
+      expireTimer
+    },
+    options = {}
   ) {
     return this.sendMessage(
       {
         recipients: [number],
-        body: messageText,
+        body: body,
         timestamp,
         attachments,
         quote,
         preview,
         sticker,
-        expireTimer,
-        profileKey
+        expireTimer
       },
       options
     );
   }
 
-  resetSession(number, timestamp, options) {
+  async resetSession(number, timestamp, options) {
     debug("resetting secure session");
     const silent = false;
-    const proto = new DataMessage();
+    const proto = DataMessage.create();
     proto.body = "TERMINATE";
     proto.flags = DataMessage.Flags.END_SESSION;
 
@@ -920,7 +953,7 @@ class MessageSender {
         )
       );
 
-    const myNumber = this.store.userGetNumber();
+    const myNumber = await this.store.getNumber();
     // We already sent the reset session to our other devices in the code above!
     if (number === myNumber) {
       return sendToContactPromise;
@@ -941,30 +974,30 @@ class MessageSender {
   }
 
   async sendMessageToGroup(
-    groupId,
-    groupNumbers,
-    messageText,
-    attachments,
-    quote,
-    preview,
-    sticker,
-    timestamp,
-    expireTimer,
-    profileKey,
-    options
+    {
+      groupId,
+      groupNumbers = [],
+      body = "",
+      attachments = [],
+      quote,
+      preview,
+      sticker,
+      timestamp,
+      expireTimer
+    },
+    options = {}
   ) {
-    const me = this.store.userGetNumber();
+    const me = await this.store.getNumber();
     const numbers = groupNumbers.filter(number => number !== me);
     const attrs = {
-      recipients: numbers,
-      body: messageText,
+      recipients: groupNumbers,
+      body: body,
       timestamp,
       attachments,
       quote,
       preview,
       sticker,
       expireTimer,
-      profileKey,
       group: {
         id: groupId,
         type: GroupContext.Type.DELIVER
@@ -985,12 +1018,12 @@ class MessageSender {
   }
 
   createGroup(targetNumbers, id, name, avatar, options) {
-    const proto = new DataMessage();
-    proto.group = new GroupContext();
+    const proto = DataMessage.create();
+    proto.group = GroupContext.create();
     proto.group.id = stringToArrayBuffer(id);
 
     proto.group.type = GroupContext.Type.UPDATE;
-    proto.group.members = numbers;
+    proto.group.members = targetNumbers;
     proto.group.name = name;
 
     return this.makeAttachmentPointer(avatar).then(attachment => {
@@ -1005,8 +1038,8 @@ class MessageSender {
   }
 
   updateGroup(groupId, name, avatar, targetNumbers, options) {
-    const proto = new DataMessage();
-    proto.group = new GroupContext();
+    const proto = DataMessage.create();
+    proto.group = GroupContext.create();
 
     proto.group.id = stringToArrayBuffer(groupId);
     proto.group.type = GroupContext.Type.UPDATE;
@@ -1025,8 +1058,8 @@ class MessageSender {
   }
 
   addNumberToGroup(groupId, newNumber, options) {
-    const proto = new DataMessage();
-    proto.group = new GroupContext();
+    const proto = DataMessage.create();
+    proto.group = GroupContext.create();
     proto.group.id = stringToArrayBuffer(groupId);
     proto.group.type = GroupContext.Type.UPDATE;
     proto.group.members = newNumbers;
@@ -1034,8 +1067,8 @@ class MessageSender {
   }
 
   setGroupName(groupId, name) {
-    const proto = new DataMessage();
-    proto.group = new GroupContext();
+    const proto = DataMessage.create();
+    proto.group = GroupContext.create();
     proto.group.id = stringToArrayBuffer(groupId);
     proto.group.type = GroupContext.Type.UPDATE;
     proto.group.name = name;
@@ -1044,8 +1077,8 @@ class MessageSender {
   }
 
   setGroupAvatar(groupId, avatar, groupNumbers, options) {
-    const proto = new DataMessage();
-    proto.group = new GroupContext();
+    const proto = DataMessage.create();
+    proto.group = GroupContext.create();
     proto.group.id = stringToArrayBuffer(groupId);
     proto.group.type = GroupContext.Type.UPDATE;
     proto.group.members = groupNumbers;
@@ -1056,8 +1089,8 @@ class MessageSender {
   }
 
   leaveGroup(groupId, groupNumbers, options) {
-    const proto = new DataMessage();
-    proto.group = new GroupContext();
+    const proto = DataMessage.create();
+    proto.group = GroupContext.create();
     proto.group.id = stringToArrayBuffer(groupId);
     proto.group.type = GroupContext.Type.QUIT;
     return this.sendGroupProto(groupNumbers, proto, Date.now(), options);
@@ -1068,16 +1101,14 @@ class MessageSender {
     groupNumbers,
     expireTimer,
     timestamp,
-    profileKey,
     options
   ) {
-    const me = this.store.userGetNumber();
+    const me = await this.store.getNumber();
     const numbers = groupNumbers.filter(number => number !== me);
     const attrs = {
       recipients: numbers,
       timestamp,
       expireTimer,
-      profileKey,
       flags: DataMessage.Flags.EXPIRATION_TIMER_UPDATE,
       group: {
         id: groupId,
@@ -1098,19 +1129,17 @@ class MessageSender {
     return this.sendMessage(attrs, options);
   }
 
-  sendExpirationTimerUpdateToNumber(
+  async sendExpirationTimerUpdateToNumber(
     number,
     expireTimer,
     timestamp,
-    profileKey,
-    options
+    options = {}
   ) {
     return this.sendMessage(
       {
         recipients: [number],
         timestamp,
         expireTimer,
-        profileKey,
         flags: DataMessage.Flags.EXPIRATION_TIMER_UPDATE
       },
       options

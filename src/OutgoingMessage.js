@@ -2,13 +2,16 @@
  * vim: ts=2:sw=2:expandtab
  */
 
+"use strict";
+
 /* eslint-disable more/no-then */
 
 const debug = require("debug")("libsignal-service:OutgoingMessage");
+const _ = require("lodash");
 const btoa = require("btoa");
 const libsignal = require("@throneless/libsignal-protocol");
 const errors = require("./errors.js");
-const Message = require("./message.js");
+const Message = require("./Message.js");
 const protobuf = require("./protobufs.js");
 const Content = protobuf.lookupType("signalservice.Content");
 const DataMessage = protobuf.lookupType("signalservice.DataMessage");
@@ -260,7 +263,7 @@ class OutgoingMessage {
     return this.plaintext;
   }
 
-  doSendMessage(number, deviceIds, recurse) {
+  async doSendMessage(number, deviceIds, recurse) {
     const ciphers = {};
     const plaintext = this.getPlaintext();
 
@@ -279,8 +282,8 @@ class OutgoingMessage {
     const sealedSender = Boolean(accessKey && senderCertificate);
 
     // We don't send to ourselves if unless sealedSender is enabled
-    const ourNumber = this.store.userGetNumber();
-    const ourDeviceId = this.store.userGetDeviceId();
+    const ourNumber = await this.store.getNumber();
+    const ourDeviceId = await this.store.getDeviceId();
     if (number === ourNumber && !sealedSender) {
       // eslint-disable-next-line no-param-reassign
       deviceIds = _.reject(

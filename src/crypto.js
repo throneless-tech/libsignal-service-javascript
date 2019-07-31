@@ -3,10 +3,13 @@
  */
 
 "use strict";
+
+const btoa = require("btoa");
 const ByteBuffer = require("bytebuffer");
 const libsignal = require("@throneless/libsignal-protocol");
 const WebCrypto = require("node-webcrypto-ossl");
 const webcrypto = new WebCrypto();
+const helpers = require("./helpers.js");
 const WebSocketMessage = require("./protobufs.js").lookupType(
   "signalservice.WebSocketMessage"
 );
@@ -321,15 +324,6 @@ function getAttachmentLabel(path) {
 }
 
 const PUB_KEY_LENGTH = 32;
-async function encryptAttachment(staticPublicKey, path, plaintext) {
-  const uniqueId = getAttachmentLabel(path);
-  return encryptFile(staticPublicKey, uniqueId, plaintext);
-}
-
-async function decryptAttachment(staticPrivateKey, path, data) {
-  const uniqueId = getAttachmentLabel(path);
-  return decryptFile(staticPrivateKey, uniqueId, data);
-}
 
 async function encryptFile(staticPublicKey, uniqueId, plaintext) {
   const ephemeralKeyPair = await libsignal.KeyHelper.generateIdentityKeyPair();
@@ -670,6 +664,17 @@ function getFirstBytes(data, n) {
   return source.subarray(0, n);
 }
 
+function generatePassword() {
+  const password = btoa(
+    helpers.getString(libsignal.KeyHelper.getRandomBytes(16))
+  );
+  return password.substring(0, password.length - 2);
+}
+
+function generateGroupId() {
+  return helpers.getString(libsignal.KeyHelper.getRandomBytes(16));
+}
+
 // Internal-only
 
 function _getBytes(data, start, n) {
@@ -696,17 +701,17 @@ exports = module.exports = {
   constantTimeEqual,
   decryptAesCtr,
   decryptDeviceName,
-  decryptAttachment,
   decryptFile,
   decryptSymmetric,
   deriveAccessKey,
   deriveStickerPackKey,
   encryptAesCtr,
   encryptDeviceName,
-  encryptAttachment,
   encryptFile,
   encryptSymmetric,
   fromEncodedBinaryToArrayBuffer,
+  generateGroupId,
+  generatePassword,
   getAccessKeyVerifier,
   getFirstBytes,
   getRandomBytes,

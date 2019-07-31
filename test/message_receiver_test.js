@@ -4,7 +4,8 @@ const Blob = require("node-blob");
 const ByteBuffer = require("bytebuffer");
 const MockServer = require("mock-socket").Server;
 const crypto = require("../src/crypto.js");
-const SignalProtocolStore = require("./InMemorySignalProtocolStore.js");
+const storage = require("./InMemorySignalProtocolStore.js");
+const ProtocolStore = require("../src/index.js").ProtocolStore;
 const MessageReceiver = require("../src/index.js").MessageReceiver;
 const WebCrypto = require("node-webcrypto-ossl");
 const webcrypto = new WebCrypto();
@@ -14,14 +15,15 @@ const Envelope = protobuf.lookupType("signalservice.Envelope");
 const WebSocketMessage = protobuf.lookupType("signalservice.WebSocketMessage");
 
 describe("MessageReceiver", () => {
-  const protocolStore = new SignalProtocolStore();
+  const protocolStore = new ProtocolStore(new storage());
+  protocolStore.load();
   const number = "+19999999999";
   const deviceId = 1;
   const signalingKey = crypto.getRandomBytes(32 + 20);
   before(() => {
-    protocolStore.userSetNumberAndDeviceId(number, deviceId, "name");
-    protocolStore.put("password", "password");
-    protocolStore.put("signaling_key", signalingKey);
+    protocolStore.setNumberAndDeviceId(number, deviceId, "name");
+    protocolStore.setPassword("password");
+    //protocolStore.setSignalingKey(signalingKey);
   });
 
   describe("connecting", () => {

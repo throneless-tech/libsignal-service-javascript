@@ -1,6 +1,6 @@
 "use strict";
 var assert = require("chai").assert;
-var createTaskWithTimeout = require("../src/task_with_timeout.js");
+var createTaskWithTimeout = require("../src/taskWithTimeout.js");
 
 describe("createTaskWithTimeout", () => {
   it("resolves when promise resolves", () => {

@@ -1,11 +1,12 @@
 /*
  * vim: ts=2:sw=2:expandtab
  */
+
 "use strict";
 
 const debug = require("debug")("libsignal-service:WebSocketResource");
-const EventTarget = require("./event_target.js");
-const Event = require("./event.js");
+const EventTarget = require("./EventTarget.js");
+const Event = require("./Event.js");
 const FileReader = require("filereader");
 const Long = require("long");
 const crypto = require("./crypto.js");

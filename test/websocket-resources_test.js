@@ -6,7 +6,7 @@ const WebSocket = require("websocket").w3cwebsocket;
 const protobuf = require("../src/protobufs.js");
 const WebSocketMessage = protobuf.lookupType("signalservice.WebSocketMessage");
 const assertEqualArrayBuffers = require("./_test.js").assertEqualArrayBuffers;
-const WebSocketResource = require("../src/websocket-resources.js");
+const WebSocketResource = require("../src/WebSocketResource.js");
 
 describe("WebSocket-Resource", () => {
   describe("requests and responses", () => {

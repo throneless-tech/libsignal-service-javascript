@@ -1,3 +1,7 @@
+/*
+ * vim: ts=2:sw=2:expandtab
+ */
+
 "use strict";
 
 const libsignal = require("@throneless/libsignal-protocol");
@@ -9,6 +13,8 @@ const ProvisionMessage = require("./protobufs.js").lookupType(
 
 // eslint-disable-next-line func-names
 class ProvisioningCipher {
+  constructor() {}
+
   decrypt(provisionEnvelope) {
     const masterEphemeral = provisionEnvelope.publicKey.toArrayBuffer();
     const message = provisionEnvelope.body.toArrayBuffer();

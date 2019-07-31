@@ -1,7 +1,9 @@
+/*
+ * vim: ts=2:sw=2:expandtab
+ */
+
 "use strict";
 
-const btoa = require("btoa");
-const helpers = require("./helpers.js");
 const origConfigDir = process.env.NODE_CONFIG_DIR;
 process.env.NODE_CONFIG_DIR = __dirname + "/../config";
 const config = require("config");
@@ -10,7 +12,7 @@ let proxyUrl;
 if (config.has("proxyUrl")) {
   proxyUrl = config.get("proxyUrl");
 }
-const WebAPI = require("./web_api.js").initialize({
+const WebAPI = require("./WebAPI.js").initialize({
   url: config.get("serverUrl"),
   cdnUrl: config.get("cdnUrl"),
   certificateAuthority: config.get("certificateAuthority"),
@@ -18,15 +20,15 @@ const WebAPI = require("./web_api.js").initialize({
   proxyUrl: proxyUrl
 });
 exports = module.exports = {};
-exports.AccountManager = require("./account_manager.js")(WebAPI);
-exports.MessageReceiver = require("./message_receiver.js")(
+exports.AccountManager = require("./AccountManager.js")(WebAPI);
+exports.MessageReceiver = require("./MessageReceiver.js")(
   WebAPI,
   config.get("serverTrustRoot")
 );
-exports.MessageSender = require("./sendmessage.js")(WebAPI);
+exports.MessageSender = require("./MessageSender.js")(WebAPI);
+exports.ProtocolStore = require("./ProtocolStore.js");
+exports.AttachmentHelper = require("./AttachmentHelper.js");
 exports.KeyHelper = require("@throneless/libsignal-protocol").KeyHelper;
 exports.KeyHelper.getRandomBytes = require("./crypto.js").getRandomBytes;
-exports.KeyHelper.generatePassword = function() {
-  var password = btoa(helpers.getString(exports.KeyHelper.getRandomBytes(16)));
-  return password.substring(0, password.length - 2);
-};
+exports.KeyHelper.generatePassword = require("./crypto.js").generatePassword;
+exports.KeyHelper.generateGroupId = require("./crypto.js").generateGroupId;

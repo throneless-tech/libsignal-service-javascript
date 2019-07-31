@@ -1,8 +1,8 @@
 "use strict";
 const assert = require("assert");
-const ProtocolStore = require("./InMemorySignalProtocolStore.js");
-var protocolStore = new ProtocolStore();
+const storage = require("./InMemorySignalProtocolStore.js");
 const api = require("../src/index.js");
+const protocolStore = new api.ProtocolStore(new storage());
 const libsignal = require("@throneless/libsignal-protocol");
 
 describe("Protocol Wrapper", function thisNeeded() {
@@ -11,8 +11,9 @@ describe("Protocol Wrapper", function thisNeeded() {
   this.timeout(5000);
 
   before(done => {
-    protocolStore.clear();
-    api.KeyHelper.generateIdentityKeyPair()
+    protocolStore
+      .removeAllData()
+      .then(() => api.KeyHelper.generateIdentityKeyPair())
       .then(key => protocolStore.saveIdentity(identifier, key.pubKey))
       .then(() => {
         done();
