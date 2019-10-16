@@ -26,6 +26,17 @@ class Storage {
     return collection;
   }
 
+  _getAllIds(namespace) {
+    const collection = [];
+    for (let key of this._store._keys) {
+      if (key.startsWith(namespace)) {
+        const { id } = this._get("", key);
+        collection.push(id);
+      }
+    }
+    return collection;
+  }
+
   _remove(namespace, id) {
     this._store.removeItem("" + namespace + id);
   }
@@ -125,7 +136,7 @@ class Storage {
   }
 
   getUnprocessedById(id) {
-    this._get("unprocessed", id);
+    return this._get("unprocessed", id);
   }
 
   saveUnprocessed(data) {
@@ -149,6 +160,27 @@ class Storage {
 
   removeAllUnprocessed() {
     this._removeAll("unprocessed");
+  }
+
+  async createOrUpdateGroup(data) {
+    const { id } = data;
+    this._put("groups", id, data);
+  }
+
+  async getGroupById(id) {
+    return this._get("groups", id);
+  }
+
+  async getAllGroups() {
+    return this._getAll("groups");
+  }
+
+  async getAllGroupIds() {
+    return this._getAllIds("groups");
+  }
+
+  async removeGroupById(id) {
+    this._remove("groups", id);
   }
 
   async getAllConfiguration() {

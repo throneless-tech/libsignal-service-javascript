@@ -9,6 +9,7 @@
 // eslint-disable-next-line func-names
 const debug = require("debug")("libsignal-service:ProtocolStore");
 const libsignal = require("@throneless/libsignal-protocol");
+const crypto = require("../src/crypto.js");
 const helpers = require("../src/helpers.js");
 const _ = require("underscore");
 
@@ -105,7 +106,7 @@ class ProtocolStore {
 
   // Cache
   async _hydrateCaches() {
-    await Promise.all([
+    const promises = [
       _hydrateCache(
         this,
         "identityKeys",
@@ -131,7 +132,15 @@ class ProtocolStore {
         await this.storage.getAllConfiguration(),
         "id"
       )
-    ]);
+    ];
+
+    // Check for group support
+    if (typeof this.storage.getAllGroups === "function") {
+      promises.push(
+        _hydrateCache(this, "groups", await this.storage.getAllGroups(), "id")
+      );
+    }
+    await Promise.all(promises);
   }
 
   async _getFromCache(cache, id) {
@@ -199,6 +208,10 @@ class ProtocolStore {
     return this._hydrateCaches().then(() => {
       this.status = CacheStatus.HYDRATED;
     });
+  }
+
+  hasGroups() {
+    return this.hasOwnProperty("groups");
   }
 
   // PreKeys
@@ -393,7 +406,7 @@ class ProtocolStore {
       throw new Error("Tried to get identity key for undefined/null key");
     }
     const number = helpers.unencodeNumber(identifier)[0];
-    const isOurNumber = number === this.getNumber();
+    const isOurNumber = number === (await this.getNumber());
 
     const identityRecord = await this._getFromCache("identityKeys", number);
 
@@ -829,6 +842,165 @@ class ProtocolStore {
     await this.storage.removeAllConfiguration();
   }
 
+  // GROUPS
+
+  async getGroup(groupId) {
+    if (!this.hasGroups()) {
+      throw new Error(`This storage backend does not support groups.`);
+    }
+    return this.storage.getGroupById(groupId).then(group => {
+      if (!group) return undefined;
+
+      return { id: groupId, numbers: group.numbers };
+    });
+  }
+
+  async getGroupNumbers(groupId) {
+    if (!this.hasGroups()) {
+      throw new Error(`This storage backend does not support groups.`);
+    }
+    const group = await this.getGroup(groupId);
+    if (!group) return undefined;
+
+    return group.numbers;
+  }
+
+  async createNewGroup(groupId, numbers) {
+    if (!this.hasGroups()) {
+      throw new Error(`This storage backend does not support groups.`);
+    }
+    debug("Creating new group.");
+    return new Promise(resolve => {
+      if (!groupId) {
+        debug("No groupId specified, generating new groupId");
+        resolve(
+          crypto.generateGroupId().then(newGroupId => {
+            // eslint-disable-next-line no-param-reassign
+            groupId = newGroupId;
+          })
+        );
+      } else {
+        resolve(
+          this.getGroup(groupId).then(group => {
+            if (group !== undefined) {
+              throw new Error("Tried to recreate group");
+            }
+          })
+        );
+      }
+    })
+      .then(() => {
+        return this.getNumber();
+      })
+      .then(me => {
+        let haveMe = false;
+        const finalNumbers = [];
+        // eslint-disable-next-line no-restricted-syntax, guard-for-in
+        for (const i in numbers) {
+          const number = numbers[i];
+          if (!helpers.isNumberSane(number))
+            throw new Error("Invalid number in group");
+          if (number === me) haveMe = true;
+          if (finalNumbers.indexOf(number) < 0) finalNumbers.push(number);
+        }
+
+        if (!haveMe) finalNumbers.push(me);
+
+        const groupObject = {
+          id: groupId,
+          numbers: finalNumbers,
+          numberRegistrationIds: {}
+        };
+        // eslint-disable-next-line no-restricted-syntax, guard-for-in
+        for (const i in finalNumbers) {
+          groupObject.numberRegistrationIds[finalNumbers[i]] = {};
+        }
+
+        return this._saveToCache("groups", groupId, groupObject)
+          .then(this.storage.createOrUpdateGroup(groupObject))
+          .then(() => ({ id: groupId, numbers: finalNumbers }));
+      });
+  }
+
+  async deleteGroup(groupId) {
+    if (!this.hasGroups()) {
+      throw new Error(`This storage backend does not support groups.`);
+    }
+    await this._removeFromCache("groups", groupId);
+    await this.storage.removeGroupById(groupId);
+  }
+
+  async updateGroupNumbers(groupId, numbers) {
+    if (!this.hasGroups()) {
+      throw new Error(`This storage backend does not support groups.`);
+    }
+    return this.getGroup(groupId).then(group => {
+      if (group === undefined)
+        throw new Error("Tried to update numbers for unknown group");
+
+      if (numbers.filter(helpers.isNumberSane).length < numbers.length)
+        throw new Error("Invalid number in new group members");
+
+      const added = numbers.filter(number => group.numbers.indexOf(number) < 0);
+
+      return this.addGroupNumbers(groupId, added);
+    });
+  }
+
+  async addGroupNumbers(groupId, numbers) {
+    if (!this.hasGroups()) {
+      throw new Error(`This storage backend does not support groups.`);
+    }
+    return this.getGroup(groupId).then(group => {
+      if (group === undefined) return undefined;
+
+      // eslint-disable-next-line no-restricted-syntax, guard-for-in
+      for (const i in numbers) {
+        const number = numbers[i];
+        if (!helpers.isNumberSane(number))
+          throw new Error("Invalid number in set to add to group");
+        if (group.numbers.indexOf(number) < 0) {
+          group.numbers.push(number);
+          // eslint-disable-next-line no-param-reassign
+          group.numberRegistrationIds[number] = {};
+        }
+      }
+
+      return this._saveToCache("groups", groupId, group).then(() => {
+        this.storage.createOrUpdateGroup(group);
+        return group.numbers;
+      });
+    });
+  }
+
+  async removeGroupNumber(groupId, number) {
+    if (!this.hasGroups()) {
+      throw new Error(`This storage backend does not support groups.`);
+    }
+    return this.getGroup(groupId).then(group => {
+      if (group === undefined) return undefined;
+
+      const me = this.getNumber();
+      if (number === me)
+        throw new Error(
+          "Cannot remove ourselves from a group, leave the group instead"
+        );
+
+      const i = group.numbers.indexOf(number);
+      if (i > -1) {
+        group.numbers.splice(i, 1);
+        // eslint-disable-next-line no-param-reassign
+        //delete group.numberRegistrationIds[number];
+        return this._saveToCache("groups", groupId, group).then(() => {
+          this.storage.createOrUpdateGroup(group);
+          return group.numbers;
+        });
+      }
+
+      return group.numbers;
+    });
+  }
+
   // OPTIONS
 
   async _saveConfiguration(id, value) {
@@ -1038,6 +1210,8 @@ class ProtocolStore {
   async setSignalingKey(value) {
     await this._saveConfiguration("signaling_key", value);
   }
+
+  // Groups
 }
 
 exports = module.exports = ProtocolStore;

@@ -1216,14 +1216,31 @@ class MessageReceiver extends EventTarget {
       const promises = [];
       while (groupDetails !== undefined) {
         groupDetails.id = groupDetails.id.toBinary();
-        const ev = new Event("group");
-        ev.confirm = this.removeFromCache.bind(this, envelope);
-        ev.groupDetails = groupDetails;
-        const promise = this.dispatchAndWait(ev).catch(e => {
-          debug("error processing group", e);
-        });
-        groupDetails = groupBuffer.next();
-        promises.push(promise);
+        if (groupDetails.active) {
+          if (this.store.hasGroups()) {
+            this.store.getGroup(groupDetails.id).then(existingGroup => {
+              if (existingGroup === undefined) {
+                return this.store.createNewGroup(
+                  groupDetails.members,
+                  groupDetails.id
+                );
+              } else {
+                return this.store.updateGroupNumbers(
+                  groupDetails.id,
+                  groupDetails.members
+                );
+              }
+            });
+          }
+          const ev = new Event("group");
+          ev.confirm = this.removeFromCache.bind(this, envelope);
+          ev.groupDetails = groupDetails;
+          const promise = this.dispatchAndWait(ev).catch(e => {
+            debug("error processing group", e);
+          });
+          groupDetails = groupBuffer.next();
+          promises.push(promise);
+        }
       }
 
       Promise.all(promises).then(() => {
@@ -1319,7 +1336,7 @@ class MessageReceiver extends EventTarget {
     );
   }
 
-  processDecrypted(envelope, decrypted) {
+  async processDecrypted(envelope, decrypted, source) {
     /* eslint-disable no-bitwise, no-param-reassign */
     const FLAGS = DataMessage.Flags;
 
@@ -1361,28 +1378,62 @@ class MessageReceiver extends EventTarget {
       throw new Error("Unknown flags in message");
     }
 
-    const promises = [];
-
     if (decrypted.group !== null) {
       decrypted.group.id = ByteBuffer.wrap(decrypted.group.id).toBinary();
 
-      switch (decrypted.group.type) {
-        case GroupContext.Type.UPDATE:
-          decrypted.body = null;
-          decrypted.attachments = [];
-          break;
-        case GroupContext.Type.QUIT:
-          decrypted.body = null;
-          decrypted.attachments = [];
-          break;
-        case GroupContext.Type.DELIVER:
-          decrypted.group.name = null;
-          decrypted.group.members = [];
-          decrypted.group.avatar = null;
-          break;
-        default:
-          this.removeFromCache(envelope);
-          throw new Error("Unknown group message type");
+      var existingGroup = [];
+      if (this.store.hasGroups()) {
+        existingGroup = await this.store.getGroupNumbers(decrypted.group.id);
+        if (existingGroup === undefined) {
+          if (decrypted.group.type !== GroupContext.Type.UPDATE) {
+            decrypted.group.members = [source];
+            debug("Got message for unknown group");
+          }
+          this.store.createNewGroup(
+            decrypted.group.id,
+            decrypted.group.members
+          );
+        } else {
+          const fromIndex = existingGroup.indexOf(source);
+
+          if (fromIndex < 0) {
+            // TODO: This could be indication of a race...
+            debug(
+              "Sender was not a member of the group they were sending from"
+            );
+          }
+        }
+      }
+      if (existingGroup !== undefined) {
+        switch (decrypted.group.type) {
+          case GroupContext.Type.UPDATE:
+            decrypted.body = null;
+            decrypted.attachments = [];
+            if (this.store.hasGroups()) {
+              this.store.updateGroupNumbers(
+                decrypted.group.id,
+                decrypted.group.members
+              );
+            }
+            break;
+          case GroupContext.Type.QUIT:
+            decrypted.body = null;
+            decrypted.attachments = [];
+            if (this.store.hasGroups() && source === this.number) {
+              this.store.deleteGroup(decrypted.group.id);
+            } else {
+              this.store.removeGroupNumber(decrypted.group.id, source);
+            }
+            break;
+          case GroupContext.Type.DELIVER:
+            decrypted.group.name = null;
+            decrypted.group.members = [];
+            decrypted.group.avatar = null;
+            break;
+          default:
+            this.removeFromCache(envelope);
+            throw new Error("Unknown group message type");
+        }
       }
     }
 
@@ -1467,10 +1518,7 @@ class MessageReceiver extends EventTarget {
       }
     }
 
-    return Promise.all(promises).then(() => decrypted);
-    /* eslint-enable no-bitwise, no-param-reassign */
-
-    return Promise.all(promises).then(() => decrypted);
+    return decrypted;
     /* eslint-enable no-bitwise, no-param-reassign */
   }
 

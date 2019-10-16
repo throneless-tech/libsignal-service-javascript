@@ -600,6 +600,11 @@ class MessageSender {
       throw new Error("Need to provide either recipientId or groupId!");
     }
 
+    // If we have group support, retrieve from store
+    if (this.store.hasGroups()) {
+      groupNumbers = (await this.store.getGroupNumbers(groupId)) || [];
+    }
+
     const recipients = groupId
       ? _.without(groupNumbers, myNumber)
       : [recipientId];
@@ -987,6 +992,13 @@ class MessageSender {
     },
     options = {}
   ) {
+    if (this.store.hasGroups()) {
+      groupNumbers = await this.store.getGroupNumbers(groupId);
+      if (!groupNumbers) {
+        return Promise.reject(new Error("Unknown Group"));
+      }
+    }
+
     const me = await this.store.getNumber();
     const numbers = groupNumbers.filter(number => number !== me);
     const attrs = {
@@ -1017,19 +1029,30 @@ class MessageSender {
     return this.sendMessage(attrs, options);
   }
 
-  createGroup(targetNumbers, id, name, avatar, options) {
+  async createGroup(targetNumbers, id, name, avatar, options) {
+    debug("targetNumbers", targetNumbers);
     const proto = DataMessage.create();
     proto.group = GroupContext.create();
-    proto.group.id = stringToArrayBuffer(id);
+    if (this.store.hasGroups()) {
+      await this.store.createNewGroup(id, targetNumbers).then(group => {
+        debug("group", group);
+        proto.group.id = stringToArrayBuffer(group.id);
+        const { numbers } = group;
+        proto.group.members = numbers;
+      });
+    } else {
+      proto.group.id = stringToArrayBuffer(id);
+      proto.group.members = targetNumbers;
+    }
 
     proto.group.type = GroupContext.Type.UPDATE;
-    proto.group.members = targetNumbers;
     proto.group.name = name;
+    debug("group proto", proto);
 
     return this.makeAttachmentPointer(avatar).then(attachment => {
       proto.group.avatar = attachment;
       return this.sendGroupProto(
-        targetNumbers,
+        proto.group.members,
         proto,
         Date.now(),
         options
@@ -1037,19 +1060,30 @@ class MessageSender {
     });
   }
 
-  updateGroup(groupId, name, avatar, targetNumbers, options) {
+  async updateGroup(groupId, name, avatar, targetNumbers, options) {
     const proto = DataMessage.create();
     proto.group = GroupContext.create();
 
     proto.group.id = stringToArrayBuffer(groupId);
     proto.group.type = GroupContext.Type.UPDATE;
     proto.group.name = name;
-    proto.group.members = targetNumbers;
+    if (this.store.hasGroups()) {
+      await this.store
+        .updateGroupNumbers(groupId, targetNumbers)
+        .then(numbers => {
+          if (!numbers) {
+            return Promise.reject(new Error("Unknown Group"));
+          }
+          proto.group.members = numbers;
+        });
+    } else {
+      proto.group.members = targetNumbers;
+    }
 
     return this.makeAttachmentPointer(avatar).then(attachment => {
       proto.group.avatar = attachment;
       return this.sendGroupProto(
-        targetNumbers,
+        proto.group.members,
         proto,
         Date.now(),
         options
@@ -1057,43 +1091,92 @@ class MessageSender {
     });
   }
 
-  addNumberToGroup(groupId, newNumber, options) {
+  async addNumberToGroup(groupId, newNumbers, options) {
     const proto = DataMessage.create();
     proto.group = GroupContext.create();
     proto.group.id = stringToArrayBuffer(groupId);
     proto.group.type = GroupContext.Type.UPDATE;
-    proto.group.members = newNumbers;
-    return this.sendGroupProto(newNumbers, proto, Date.now(), options);
+    if (this.store.hasGroups()) {
+      if (typeof newNumbers === "string") {
+        newNumbers = [newNumbers];
+      }
+      await this.store.addGroupNumbers(groupId, newNumbers).then(numbers => {
+        if (!numbers) {
+          return Promise.reject(new Error("Unknown Group"));
+        }
+        proto.group.members = numbers;
+      });
+    } else {
+      proto.group.members = newNumbers;
+    }
+    return this.sendGroupProto(proto.group.members, proto, Date.now(), options);
   }
 
-  setGroupName(groupId, name) {
+  async setGroupName(groupId, name, groupNumbers, options) {
     const proto = DataMessage.create();
     proto.group = GroupContext.create();
     proto.group.id = stringToArrayBuffer(groupId);
     proto.group.type = GroupContext.Type.UPDATE;
     proto.group.name = name;
-    proto.group.members = groupNumbers;
-    return this.sendGroupProto(groupNumbers, proto, Date.now(), options);
+    if (this.store.hasGroups()) {
+      await this.store.getGroupNumbers(groupId).then(numbers => {
+        if (!numbers) {
+          return Promise.reject(new Error("Unknown Group"));
+        }
+        proto.group.members = numbers;
+      });
+    } else {
+      proto.group.members = groupNumbers;
+    }
+    return this.sendGroupProto(proto.group.members, proto, Date.now(), options);
   }
 
-  setGroupAvatar(groupId, avatar, groupNumbers, options) {
+  async setGroupAvatar(groupId, avatar, groupNumbers, options) {
     const proto = DataMessage.create();
     proto.group = GroupContext.create();
     proto.group.id = stringToArrayBuffer(groupId);
     proto.group.type = GroupContext.Type.UPDATE;
-    proto.group.members = groupNumbers;
+    if (this.store.hasGroups()) {
+      await this.store.getGroupNumbers(groupId).then(numbers => {
+        if (!numbers) {
+          return Promise.reject(new Error("Unknown Group"));
+        }
+        proto.group.members = numbers;
+      });
+    } else {
+      proto.group.members = groupNumbers;
+    }
     return this.makeAttachmentPointer(avatar).then(attachment => {
       proto.group.avatar = attachment;
-      return this.sendGroupProto(groupNumbers, proto, Date.now(), options);
+      return this.sendGroupProto(
+        proto.group.members,
+        proto,
+        Date.now(),
+        options
+      );
     });
   }
 
-  leaveGroup(groupId, groupNumbers, options) {
+  async leaveGroup(groupId, groupNumbers, options) {
     const proto = DataMessage.create();
     proto.group = GroupContext.create();
     proto.group.id = stringToArrayBuffer(groupId);
     proto.group.type = GroupContext.Type.QUIT;
-    return this.sendGroupProto(groupNumbers, proto, Date.now(), options);
+    if (this.store.hasGroups()) {
+      await this.store.getGroupNumbers(groupId).then(numbers => {
+        if (!numbers) {
+          return Promise.reject(new Error("Unknown Group"));
+        }
+        proto.group.members = numbers;
+        return this.store
+          .deleteGroup(groupId)
+          .then(() =>
+            this.sendGroupProto(proto.group.members, proto, Date.now(), options)
+          );
+      });
+    }
+    proto.group.members = groupNumbers;
+    return this.sendGroupProto(proto.group.members, proto, Date.now(), options);
   }
 
   async sendExpirationTimerUpdateToGroup(
@@ -1103,6 +1186,13 @@ class MessageSender {
     timestamp,
     options
   ) {
+    if (this.store.hasGroups()) {
+      groupNumbers = await this.store.getGroupNumbers(groupId);
+      if (!groupNumbers) {
+        return Promise.reject(new Error("Unknown Group"));
+      }
+    }
+
     const me = await this.store.getNumber();
     const numbers = groupNumbers.filter(number => number !== me);
     const attrs = {

@@ -13,6 +13,7 @@ class Storage {
       "25519KeypreKey": {},
       "25519KeysignedKey": {},
       unprocessed: {},
+      groups: {},
       configuration: {}
     };
   }
@@ -30,6 +31,14 @@ class Storage {
     const collection = [];
     for (let id of Object.keys(this._store[namespace])) {
       collection.push(this._get("", id));
+    }
+    return collection;
+  }
+
+  _getAllIds(namespace) {
+    const collection = [];
+    for (let id of Object.keys(this._store[namespace])) {
+      collection.push(id);
     }
     return collection;
   }
@@ -145,6 +154,27 @@ class Storage {
 
   removeAllUnprocessed() {
     this._removeAll("unprocessed");
+  }
+
+  async createOrUpdateGroup(data) {
+    const { id } = data;
+    this._put("groups", id, data);
+  }
+
+  async getGroupById(id) {
+    return this._get("groups", id);
+  }
+
+  async getAllGroups() {
+    return this._getAll("groups");
+  }
+
+  async getAllGroupIds() {
+    return this._getAllIds("groups");
+  }
+
+  async removeGroupById(id) {
+    this._remove("groups", id);
   }
 
   async getAllConfiguration() {
