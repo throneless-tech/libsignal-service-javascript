@@ -76,7 +76,7 @@ async function saveFile(file, dest) {
     const guid = getGuid();
     fileName = "" + guid + extension;
   }
-  target = path.join(dest, fileName);
+  const target = path.join(dest, fileName);
   return fs.writeFile(target, Buffer.from(file.data)).then(() => {
     return target;
   });
