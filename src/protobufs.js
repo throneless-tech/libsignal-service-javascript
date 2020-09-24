@@ -8,6 +8,7 @@ const debug = require("debug")("libsignal-service:protobuf");
 const ByteBuffer = require("bytebuffer");
 const protobufjs = require("protobufjs");
 const path = require("path");
+const helpers = require("./helpers.js");
 
 const protobuf = protobufjs.loadSync([
   path.join(__dirname, "..", "protos", "SubProtocol.proto"),
@@ -56,6 +57,22 @@ class ProtoParser {
       //if (proto.profileKey) {
       //proto.profileKey = proto.profileKey.toArrayBuffer();
       //}
+
+      if (proto.uuid) {
+        helpers.normalizeUuids(
+          proto,
+          ["uuid"],
+          "ProtoParser::next (proto.uuid)"
+        );
+      }
+
+      if (proto.members) {
+        helpers.normalizeUuids(
+          proto,
+          proto.members.map((_member, i) => `members.${i}.uuid`),
+          "ProtoParser::next (proto.members)"
+        );
+      }
 
       return proto;
     } catch (error) {

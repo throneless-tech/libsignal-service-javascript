@@ -5,6 +5,7 @@
 "use strict";
 
 const ByteBuffer = require("bytebuffer");
+const _ = require("lodash");
 /* eslint-disable no-proto, no-restricted-syntax, guard-for-in */
 
 /** *******************************
@@ -150,6 +151,38 @@ function jsonThing(thing) {
   return JSON.stringify(ensureStringed(thing));
 }
 
+/** *******************
+ *** UUID Utilities ***
+ ********************** */
+
+function isValidGuid(maybeGuid) {
+  return /^[0-9A-F]{8}-[0-9A-F]{4}-4[0-9A-F]{3}-[89AB][0-9A-F]{3}-[0-9A-F]{12}$/i.test(
+    maybeGuid
+  );
+}
+
+// https://stackoverflow.com/a/23299989
+function isValidE164(maybeE164) {
+  return /^\+?[1-9]\d{1,14}$/.test(maybeE164);
+}
+
+function normalizeUuids(obj, paths, context) {
+  if (!obj) {
+    return;
+  }
+  paths.forEach(path => {
+    const val = _.get(obj, path);
+    if (val) {
+      if (!isValidGuid(val)) {
+        debug(
+          `Normalizing invalid uuid: ${val} at path ${path} in context "${context}"`
+        );
+      }
+      _.set(obj, path, val.toLowerCase());
+    }
+  });
+}
+
 exports = module.exports = {
   isString,
   getString,
@@ -160,5 +193,8 @@ exports = module.exports = {
   convertToArrayBuffer,
   equalArrayBuffers,
   ensureStringed,
-  jsonThing
+  jsonThing,
+  isValidGuid,
+  isValidE164,
+  normalizeUuids
 };

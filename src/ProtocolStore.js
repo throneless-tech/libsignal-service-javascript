@@ -337,11 +337,13 @@ class ProtocolStore {
     await this.storage.createOrUpdateSession(data);
   }
   async getDeviceIds(number) {
+    debug(`Getting device IDs for number ${number}`);
     if (number === null || number === undefined) {
       throw new Error("Tried to get device ids for undefined/null number");
     }
 
     const allSessions = Object.values(this.sessions);
+    debug("allSessions:", allSessions);
     const sessions = allSessions.filter(session => session.number === number);
     return _.pluck(sessions, "deviceId");
   }
@@ -820,11 +822,19 @@ class ProtocolStore {
       forceSave: true
     });
   }
+  async batchAddUnprocessed(array) {
+    array.map(item => addUnprocessed(item));
+    return;
+  }
   async updateUnprocessedAttempts(id, attempts) {
     return this.storage.updateUnprocessedAttempts(id, attempts);
   }
   async updateUnprocessedWithData(id, data) {
     return this.storage.updateUnprocessedWithData(id, data);
+  }
+  async updateUnprocessedsWithData(array) {
+    array.map(item => updateUnprocessedWithData(item));
+    return;
   }
   async removeUnprocessed(id) {
     return this.storage.removeUnprocessed(id);
@@ -1044,16 +1054,40 @@ class ProtocolStore {
       await this._saveConfiguration("device_name", deviceName);
     }
   }
+
+  async setUuidAndDeviceId(uuid, deviceId, deviceName) {
+    await this._saveConfiguration("uuid_id", uuid + "." + deviceId);
+    if (deviceName) {
+      await this._saveConfiguration("device_name", deviceName);
+    }
+  }
+
   async getNumber() {
     const number_id = await this._getConfiguration("number_id");
     if (number_id === undefined) return undefined;
     return helpers.unencodeNumber(number_id)[0];
   }
 
-  async getDeviceId() {
+  async getUuid() {
+    const uuid_id = await this._getConfiguration("uuid_id");
+    if (uuid_id === undefined) return undefined;
+    return helpers.unencodeNumber(uuid_id)[0];
+  }
+
+  async _getDeviceIdFromUuid() {
+    const uuid_id = await this._getConfiguration("uuid_id");
+    if (uuid_id === undefined) return undefined;
+    return helpers.unencodeNumber(uuid_id)[1];
+  }
+
+  async _getDeviceIdFromNumber() {
     const number_id = await this._getConfiguration("number_id");
     if (number_id === undefined) return undefined;
     return helpers.unencodeNumber(number_id)[1];
+  }
+
+  async getDeviceId() {
+    return this._getDeviceIdFromUuid() || this._getDeviceIdFromNumber();
   }
 
   async removeNumberAndDeviceId() {

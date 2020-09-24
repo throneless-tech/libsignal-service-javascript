@@ -27,39 +27,34 @@ class ReplayableError extends Error {
 }
 
 class IncomingIdentityKeyError extends ReplayableError {
-  constructor(number, message, key) {
-    // eslint-disable-next-line prefer-destructuring
-    let n = number.split(".")[0];
+  constructor(identifier, message, key) {
+    this.identifier = identifier.split(".")[0];
     super({
       name: "IncomingIdentityKeyError",
-      message: `The identity of ${n} has changed.`
+      message: `The identity of ${this.identifier} has changed.`
     });
-    this.number = n;
     this.identityKey = key;
   }
 }
 
 class OutgoingIdentityKeyError extends ReplayableError {
-  constructor(number, message, timestamp, identityKey) {
-    // eslint-disable-next-line prefer-destructuring
-    let n = number.split(".")[0];
+  constructor(identifier, message, timestamp, identityKey) {
+    this.identifier = identifier.split(".")[0];
     super({
       name: "OutgoingIdentityKeyError",
-      message: `The identity of ${n} has changed.`
+      message: `The identity of ${this.identifier} has changed.`
     });
-    this.number = n;
     this.identityKey = identityKey;
   }
 }
 
 class OutgoingMessageError extends ReplayableError {
-  constructor(number, message, timestamp, httpError) {
-    // eslint-disable-next-line prefer-destructuring
+  constructor(identifier, message, timestamp, httpError) {
     super({
       name: "OutgoingMessageError",
       message: httpError ? httpError.message : "no http error"
     });
-    this.number = number.split(".")[0];
+    this.identifier = identifier.split(".")[0];
     if (httpError) {
       this.code = httpError.code;
       appendStack(this, httpError);
@@ -68,12 +63,12 @@ class OutgoingMessageError extends ReplayableError {
 }
 
 class SendMessageNetworkError extends ReplayableError {
-  constructor(number, jsonData, httpError) {
+  constructor(identifier, jsonData, httpError) {
     super({
       name: "SendMessageNetworkError",
       message: httpError.message
     });
-    this.number = number;
+    this.identifier = identifier;
     this.code = httpError.code;
     appendStack(this, httpError);
   }
@@ -100,7 +95,7 @@ class MessageError extends ReplayableError {
 }
 
 class UnregisteredUserError extends Error {
-  constructor(number, httpError) {
+  constructor(identifier, httpError) {
     super(httpError.message);
     this.message = httpError.message;
     this.name = "UnregisteredUserError";
@@ -109,7 +104,7 @@ class UnregisteredUserError extends Error {
     if (Error.captureStackTrace) {
       Error.captureStackTrace(this);
     }
-    this.number = number;
+    this.identifier = identifier;
     this.code = httpError.code;
     appendStack(this, httpError);
   }

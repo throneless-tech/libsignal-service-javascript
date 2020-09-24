@@ -6,6 +6,7 @@
 
 const debug = require("debug")("libsignal-service:SendMessage");
 const libsignal = require("@throneless/libsignal-protocol");
+const PQueue = require("p-queue");
 const crypto = require("./crypto.js");
 const errors = require("./errors.js");
 const helpers = require("./helpers.js");
@@ -69,11 +70,7 @@ class MessageSender {
     );
   }
 
-  getPaddedAttachment(data, shouldPad) {
-    if (!PAD_ALL_ATTACHMENTS && !shouldPad) {
-      return data;
-    }
-
+  getPaddedAttachment(data) {
     const size = data.byteLength;
     const paddedSize = this._getAttachmentSizeBucket(size);
     const padding = crypto.getZeroes(paddedSize - size);
@@ -81,7 +78,7 @@ class MessageSender {
     return crypto.concatenateBytes(data, padding);
   }
 
-  async makeAttachmentPointer(attachment, shouldPad = false) {
+  async makeAttachmentPointer(attachment) {
     if (typeof attachment !== "object" || attachment == null) {
       return Promise.resolve(undefined);
     }
@@ -98,7 +95,7 @@ class MessageSender {
       );
     }
 
-    const padded = this.getPaddedAttachment(data, shouldPad);
+    const padded = this.getPaddedAttachment(data);
     const key = crypto.getRandomBytes(64);
     const iv = crypto.getRandomBytes(16);
 
@@ -196,24 +193,23 @@ class MessageSender {
     return this.sendIndividualProto(number, proto, timestamp);
   }
 
-  queueJobForNumber(number, runJob) {
+  queueJobForIdentifier(identifier, runJob) {
+    //const { id } = await ConversationController.getOrCreateAndWait(
+    //  identifier,
+    //  'private'
+    //);
+    const id = identifier;
+    this.pendingMessages[id] =
+      this.pendingMessages[id] || new PQueue({ concurrency: 1 });
+
+    const queue = this.pendingMessages[id];
+
     const taskWithTimeout = createTaskWithTimeout(
       runJob,
-      `queueJobForNumber ${number}`
+      `queueJobForIdentifier ${identifier} ${id}`
     );
 
-    const runPrevious = this.pendingMessages[number] || Promise.resolve();
-    this.pendingMessages[number] = runPrevious.then(
-      taskWithTimeout,
-      taskWithTimeout
-    );
-
-    const runCurrent = this.pendingMessages[number];
-    runCurrent.then(() => {
-      if (this.pendingMessages[number] === runCurrent) {
-        delete this.pendingMessages[number];
-      }
-    });
+    return queue.add(taskWithTimeout);
   }
 
   uploadAttachments(message) {
@@ -261,14 +257,10 @@ class MessageSender {
         return;
       }
 
-      const shouldPad = true;
       // eslint-disable-next-line no-param-reassign
       message.sticker = {
         ...sticker,
-        attachmentPointer: await this.makeAttachmentPointer(
-          sticker.data,
-          shouldPad
-        )
+        attachmentPointer: await this.makeAttachmentPointer(sticker.data)
       };
     } catch (error) {
       if (error instanceof Error && error.name === "HTTPError") {
@@ -326,7 +318,7 @@ class MessageSender {
         new Promise((resolve, reject) => {
           this.sendMessageProto(
             message.timestamp,
-            message.recipients,
+            message.recipients || [],
             message.toProto(),
             res => {
               res.dataMessage = message.toArrayBuffer();
@@ -345,8 +337,8 @@ class MessageSender {
 
   async sendMessageProto(
     timestamp,
-    numbers,
-    message,
+    recipients,
+    messageProto,
     callback,
     silent,
     options = {}
@@ -355,8 +347,8 @@ class MessageSender {
     const rejections = await this.store.getSignedKeyRotationRejected();
     if (rejections > 5) {
       throw new errors.SignedPreKeyRotationError(
-        numbers,
-        message.toArrayBuffer(),
+        recipients,
+        messageProto.toArrayBuffer(),
         timestamp
       );
     }
@@ -365,19 +357,27 @@ class MessageSender {
       this.server,
       this.store,
       timestamp,
-      numbers,
-      message,
+      recipients,
+      messageProto,
       silent,
       callback,
       options
     );
 
-    numbers.forEach(number => {
-      this.queueJobForNumber(number, () => outgoing.sendToNumber(number));
+    recipients.forEach(identifier => {
+      this.queueJobForIdentifier(identifier, () =>
+        outgoing.sendToIdentifier(identifier)
+      );
     });
   }
 
-  sendMessageProtoAndWait(timestamp, numbers, message, silent, options = {}) {
+  sendMessageProtoAndWait(
+    timestamp,
+    identifiers,
+    messageProto,
+    silent,
+    options = {}
+  ) {
     return new Promise((resolve, reject) => {
       const callback = result => {
         if (result && result.errors && result.errors.length > 0) {
@@ -389,8 +389,8 @@ class MessageSender {
 
       this.sendMessageProto(
         timestamp,
-        numbers,
-        message,
+        identifiers,
+        messageProto,
         callback,
         silent,
         options
@@ -398,7 +398,7 @@ class MessageSender {
     });
   }
 
-  sendIndividualProto(number, proto, timestamp, silent, options = {}) {
+  sendIndividualProto(identifier, proto, timestamp, silent, options = {}) {
     return new Promise((resolve, reject) => {
       const callback = res => {
         if (res && res.errors && res.errors.length > 0) {
@@ -409,7 +409,7 @@ class MessageSender {
       };
       this.sendMessageProto(
         timestamp,
-        [number],
+        [identifier],
         proto,
         callback,
         silent,
@@ -435,6 +435,7 @@ class MessageSender {
     encodedDataMessage,
     timestamp,
     destination,
+    destinationUuid,
     expirationStartTimestamp,
     sentTo = [],
     unidentifiedDeliveries = [],
@@ -442,6 +443,7 @@ class MessageSender {
     options
   ) {
     const myNumber = await this.store.getNumber();
+    const myUuid = await this.store.getUuid();
     const myDevice = await this.store.getDeviceId();
     if (myDevice === 1 || myDevice === "1") {
       return Promise.resolve();
@@ -453,6 +455,9 @@ class MessageSender {
     sentMessage.message = dataMessage;
     if (destination) {
       sentMessage.destination = destination;
+    }
+    if (destinationUuid) {
+      sentMessage.destinationUuid = destinationUuid;
     }
     if (expirationStartTimestamp) {
       sentMessage.expirationStartTimestamp = expirationStartTimestamp;
@@ -471,13 +476,21 @@ class MessageSender {
       syncMessage.isRecipientUpdate = true;
     }
 
-    // Though this field has 'unidenified' in the name, it should have entries for each
+    // Though this field has 'unidentified' in the name, it should have entries for each
     //   number we sent to.
     if (sentTo && sentTo.length) {
-      sentMessage.unidentifiedStatus = sentTo.map(number => {
+      sentMessage.unidentifiedStatus = sentTo.map(identifier => {
         const status = SyncMessageSent.UnidentifiedDeliveryStatus.create();
-        status.destination = number;
-        status.unidentified = Boolean(unidentifiedLookup[number]);
+        //const conv = ConversationController.get(identifier);
+        //if (conv && conv.get("e164")) {
+        //  status.destination = conv.get("e164");
+        //}
+        //if (conv && conv.get("uuid")) {
+        //  status.destinationUuid = conv.get("uuid");
+        //}
+
+        status.destination = identifier;
+        status.unidentified = Boolean(unidentifiedLookup[identifier]);
         return status;
       });
     }
@@ -489,7 +502,7 @@ class MessageSender {
 
     const silent = true;
     return this.sendIndividualProto(
-      myNumber,
+      myUuid || myNumber,
       contentMessage,
       timestamp,
       silent,
@@ -514,8 +527,34 @@ class MessageSender {
     return this.server.getStickerPackManifest(packId);
   }
 
+  async sendRequestBlockSyncMessage(options) {
+    const myNumber = await this.store.getNumber();
+    const myUuid = await this.store.getUuid();
+    const myDevice = await this.store.getDeviceId();
+    if (myDevice !== 1 && myDevice !== "1") {
+      const request = SyncMessageRequest.create();
+      request.type = SyncMessageRequest.Type.BLOCKED;
+      const syncMessage = this.createSyncMessage();
+      syncMessage.request = request;
+      const contentMessage = Content.create();
+      contentMessage.syncMessage = syncMessage;
+
+      const silent = true;
+      return this.sendIndividualProto(
+        myUuid || myNumber,
+        contentMessage,
+        Date.now(),
+        silent,
+        options
+      );
+    }
+
+    return Promise.resolve();
+  }
+
   async sendRequestConfigurationSyncMessage(options) {
     const myNumber = await this.store.getNumber();
+    const myUuid = await this.store.getUuid();
     const myDevice = await this.store.getDeviceId();
     if (myDevice !== 1 && myDevice !== "1") {
       const request = SyncMessageRequest.create();
@@ -527,7 +566,7 @@ class MessageSender {
 
       const silent = true;
       return this.sendIndividualProto(
-        myNumber,
+        myUuid || myNumber,
         contentMessage,
         Date.now(),
         silent,
@@ -539,6 +578,7 @@ class MessageSender {
   }
   async sendRequestGroupSyncMessage(options) {
     const myNumber = await this.store.getNumber();
+    const myUuid = await this.store.getUuid();
     const myDevice = await this.store.getDeviceId();
     if (myDevice !== 1 && myDevice !== "1") {
       const request = SyncMessageRequest.create();
@@ -550,7 +590,7 @@ class MessageSender {
 
       const silent = true;
       return this.sendIndividualProto(
-        myNumber,
+        myUuid || myNumber,
         contentMessage,
         Date.now(),
         silent,
@@ -563,6 +603,7 @@ class MessageSender {
 
   async sendRequestContactSyncMessage(options) {
     const myNumber = await this.store.getNumber();
+    const myUuid = await this.store.getUuid();
     const myDevice = await this.store.getDeviceId();
     if (myDevice !== 1 && myDevice !== "1") {
       const request = SyncMessageRequest.create();
@@ -574,7 +615,7 @@ class MessageSender {
 
       const silent = true;
       return this.sendIndividualProto(
-        myNumber,
+        myUuid || myNumber,
         contentMessage,
         Date.now(),
         silent,
@@ -592,7 +633,8 @@ class MessageSender {
     // We don't want to send typing messages to our other devices, but we will
     //   in the group case.
     const myNumber = await this.store.getNumber();
-    if (recipientId && myNumber === recipientId) {
+    const myUuid = await this.store.getUuid();
+    if (recipientId && (myNumber === recipientId || myUuid === recipientId)) {
       return null;
     }
 
@@ -606,7 +648,7 @@ class MessageSender {
     }
 
     const recipients = groupId
-      ? _.without(groupNumbers, myNumber)
+      ? _.without(groupNumbers, myNumber, myUuid)
       : [recipientId];
     const groupIdBuffer = groupId
       ? crypto.fromEncodedBinaryToArrayBuffer(groupId)
@@ -638,10 +680,15 @@ class MessageSender {
     );
   }
 
-  async sendDeliveryReceipt(recipientId, timestamp, options) {
+  async sendDeliveryReceipt(recipientE164, recipientUuid, timestamp, options) {
     const myNumber = await this.store.getNumber();
     const myDevice = await this.store.getDeviceId();
-    if (myNumber === recipientId && (myDevice === 1 || myDevice === "1")) {
+    const myUuid = await this.store.getUuid();
+    if (
+      myNumber === recipientE164 &&
+      myUuid === recipientUuid &&
+      (myDevice === 1 || myDevice === "1")
+    ) {
       return Promise.resolve();
     }
 
@@ -654,7 +701,7 @@ class MessageSender {
 
     const silent = true;
     return this.sendIndividualProto(
-      recipientId,
+      recipientUuid || recipientE164,
       contentMessage,
       Date.now(),
       silent,
@@ -662,7 +709,7 @@ class MessageSender {
     );
   }
 
-  sendReadReceipts(sender, timestamps, options) {
+  sendReadReceipts(senderE164, senderUuid, timestamps, options) {
     const receiptMessage = ReceiptMessage.create();
     receiptMessage.type = ReceiptMessage.Type.READ;
     receiptMessage.timestamp = timestamps;
@@ -672,7 +719,7 @@ class MessageSender {
 
     const silent = true;
     return this.sendIndividualProto(
-      sender,
+      senderUuid || senderE164,
       contentMessage,
       Date.now(),
       silent,
@@ -681,6 +728,7 @@ class MessageSender {
   }
   async syncReadMessages(reads, options) {
     const myNumber = await this.store.getNumber();
+    const myUuid = await this.store.getUuid();
     const myDevice = await this.store.getDeviceId();
     if (myDevice !== 1 && myDevice !== "1") {
       const syncMessage = this.createSyncMessage();
@@ -696,7 +744,7 @@ class MessageSender {
 
       const silent = true;
       return this.sendIndividualProto(
-        myNumber,
+        myUuid || myNumber,
         contentMessage,
         Date.now(),
         silent,
@@ -706,6 +754,35 @@ class MessageSender {
 
     return Promise.resolve();
   }
+  async syncViewOnceOpen(sender, senderUuid, timestamp, options) {
+    const myNumber = await this.store.getNumber();
+    const myUuid = await this.store.getUuid();
+    const myDevice = await this.store.getDeviceId();
+    if (myDevice === 1 || myDevice === "1") {
+      return null;
+    }
+
+    const syncMessage = this.createSyncMessage();
+
+    const viewOnceOpen = SyncMessageViewOnceOpen.create();
+    viewOnceOpen.sender = sender;
+    viewOnceOpen.senderUuid = senderUuid;
+    viewOnceOpen.timestamp = timestamp;
+    syncMessage.viewOnceOpen = viewOnceOpen;
+
+    const contentMessage = Content.create();
+    contentMessage.syncMessage = syncMessage;
+
+    const silent = true;
+    return this.sendIndividualProto(
+      myUuid || myNumber,
+      contentMessage,
+      Date.now(),
+      silent,
+      options
+    );
+  }
+
   async sendStickerPackSync(operations, options) {
     const myDevice = await this.store.getDeviceId();
     if (myDevice === 1 || myDevice === "1") {
@@ -713,6 +790,7 @@ class MessageSender {
     }
 
     const myNumber = await this.store.getNumber();
+    const myUuid = await this.store.getUuid();
     const ENUM = SyncMessageStickerPackOperation.Type;
 
     const packOperations = operations.map(item => {
@@ -734,15 +812,22 @@ class MessageSender {
 
     const silent = true;
     return this.sendIndividualProto(
-      myNumber,
+      myUuid || myNumber,
       contentMessage,
       Date.now(),
       silent,
       options
     );
   }
-  async syncVerification(destination, state, identityKey, options) {
+  async syncVerification(
+    destinationE164,
+    destinationUuid,
+    state,
+    identityKey,
+    options
+  ) {
     const myNumber = await this.store.getNumber();
+    const myUuid = await this.store.getUuid();
     const myDevice = await this.store.getDeviceId();
     const now = Date.now();
 
@@ -766,7 +851,7 @@ class MessageSender {
     // We want the NullMessage to look like a normal outgoing message; not silent
     const silent = false;
     const promise = this.sendIndividualProto(
-      destination,
+      destinationUuid || destinationE164,
       contentMessage,
       now,
       silent,
@@ -776,7 +861,12 @@ class MessageSender {
     return promise.then(() => {
       const verified = Verified.create();
       verified.state = state;
-      verified.destination = destination;
+      if (destinationE164) {
+        verified.destination = destinationE164;
+      }
+      if (destinationUuid) {
+        verified.destinationUuid = destinationUuid;
+      }
       verified.identityKey = identityKey;
       verified.nullMessage = nullMessage.padding;
 
@@ -788,7 +878,7 @@ class MessageSender {
 
       const innerSilent = true;
       return this.sendIndividualProto(
-        myNumber,
+        myUuid || myNumber,
         secondMessage,
         now,
         innerSilent,
@@ -798,17 +888,20 @@ class MessageSender {
   }
 
   async sendGroupProto(
-    providedNumbers,
+    providedIdentifiers,
     proto,
     timestamp = Date.now(),
     options = {}
   ) {
-    const me = await this.store.getNumber();
-    const numbers = providedNumbers.filter(number => number !== me);
-    if (numbers.length === 0) {
+    const myE164 = await this.store.getNumber();
+    const myUuid = await this.store.getUuid();
+    const identifiers = providedIdentifiers.filter(
+      id => id !== myE164 && id !== myUuid
+    );
+    if (identifiers.length === 0) {
       return Promise.resolve({
-        successfulNumbers: [],
-        failoverNumbers: [],
+        successfulIdentifiers: [],
+        failoverIdentifiers: [],
         errors: [],
         unidentifiedDeliveries: [],
         dataMessage: helpers.convertToArrayBuffer(
@@ -832,7 +925,7 @@ class MessageSender {
 
       this.sendMessageProto(
         timestamp,
-        numbers,
+        providedIdentifiers,
         proto,
         callback,
         silent,
@@ -842,24 +935,27 @@ class MessageSender {
   }
 
   async getMessageProto(
-    number,
+    destination,
     body,
     attachments,
     quote,
     preview,
     sticker,
+    reaction,
     timestamp,
     expireTimer,
     flags
   ) {
     const attributes = {
-      recipients: [number],
+      recipients: [destination],
+      destination,
       body,
       timestamp,
       attachments,
       quote,
       preview,
       sticker,
+      reaction,
       expireTimer,
       flags
     };
@@ -883,14 +979,15 @@ class MessageSender {
     return message.toArrayBuffer();
   }
 
-  async sendMessageToNumber(
+  async sendMessageToIdentifier(
     {
-      number,
+      identifier,
       body = "",
       attachments = [],
       quote,
       preview,
       sticker,
+      reaction,
       timestamp,
       expireTimer
     },
@@ -898,20 +995,21 @@ class MessageSender {
   ) {
     return this.sendMessage(
       {
-        recipients: [number],
+        recipients: [identifier],
         body: body,
         timestamp,
         attachments,
         quote,
         preview,
         sticker,
+        reaction,
         expireTimer
       },
       options
     );
   }
 
-  async resetSession(number, timestamp, options) {
+  async resetSession(identifier, timestamp, options) {
     debug("resetting secure session");
     const silent = false;
     const proto = DataMessage.create();
@@ -940,7 +1038,7 @@ class MessageSender {
         )
       );
 
-    const sendToContactPromise = deleteAllSessions(number)
+    const sendToContactPromise = deleteAllSessions(identifier)
       .catch(logError("resetSession/deleteAllSessions1 error:"))
       .then(() => {
         debug("finished closing local sessions, now sending to contact");
@@ -953,14 +1051,15 @@ class MessageSender {
         ).catch(logError("resetSession/sendToContact error:"));
       })
       .then(() =>
-        deleteAllSessions(number).catch(
+        deleteAllSessions(identifier).catch(
           logError("resetSession/deleteAllSessions2 error:")
         )
       );
 
     const myNumber = await this.store.getNumber();
+    const myUuid = await this.store.getUuid();
     // We already sent the reset session to our other devices in the code above!
-    if (number === myNumber) {
+    if (identifier === myNumber || identifier === myUuid) {
       return sendToContactPromise;
     }
 
@@ -968,7 +1067,7 @@ class MessageSender {
     const sendSyncPromise = this.sendSyncMessage(
       buffer,
       timestamp,
-      number,
+      identifier,
       null,
       [],
       [],
@@ -981,12 +1080,13 @@ class MessageSender {
   async sendMessageToGroup(
     {
       groupId,
-      groupNumbers = [],
+      recipients = [],
       body = "",
       attachments = [],
       quote,
       preview,
       sticker,
+      reaction,
       timestamp,
       expireTimer
     },
@@ -999,16 +1099,17 @@ class MessageSender {
       }
     }
 
-    const me = await this.store.getNumber();
-    const numbers = groupNumbers.filter(number => number !== me);
+    const myE164 = await this.store.getNumber();
+    const myUuid = await this.store.getNumber();
     const attrs = {
-      recipients: groupNumbers,
+      recipients: recipients.filter(r => r !== myE164 && r !== myUuid),
       body: body,
       timestamp,
       attachments,
       quote,
       preview,
       sticker,
+      reaction,
       expireTimer,
       group: {
         id: groupId,
@@ -1016,10 +1117,10 @@ class MessageSender {
       }
     };
 
-    if (numbers.length === 0) {
+    if (recipients.length === 0) {
       return Promise.resolve({
-        successfulNumbers: [],
-        failoverNumbers: [],
+        successfulIdentifiers: [],
+        failoverIdentifiers: [],
         errors: [],
         unidentifiedDeliveries: [],
         dataMessage: await this.getMessageProtoObj(attrs)
@@ -1029,20 +1130,20 @@ class MessageSender {
     return this.sendMessage(attrs, options);
   }
 
-  async createGroup(targetNumbers, id, name, avatar, options) {
-    debug("targetNumbers", targetNumbers);
+  async createGroup(targetIdentifiers, id, name, avatar, options) {
+    debug("targetIdentifiers", targetIdentifiers);
     const proto = DataMessage.create();
     proto.group = GroupContext.create();
     if (this.store.hasGroups()) {
-      await this.store.createNewGroup(id, targetNumbers).then(group => {
+      await this.store.createNewGroup(id, targetIdentifiers).then(group => {
         debug("group", group);
         proto.group.id = stringToArrayBuffer(group.id);
-        const { numbers } = group;
-        proto.group.members = numbers;
+        const { identifiers } = group;
+        proto.group.members = identifiers;
       });
     } else {
       proto.group.id = stringToArrayBuffer(id);
-      proto.group.members = targetNumbers;
+      proto.group.members = targetIdentifiers;
     }
 
     proto.group.type = GroupContext.Type.UPDATE;
@@ -1060,7 +1161,7 @@ class MessageSender {
     });
   }
 
-  async updateGroup(groupId, name, avatar, targetNumbers, options) {
+  async updateGroup(groupId, name, avatar, targetIdentifiers, options) {
     const proto = DataMessage.create();
     proto.group = GroupContext.create();
 
@@ -1069,15 +1170,15 @@ class MessageSender {
     proto.group.name = name;
     if (this.store.hasGroups()) {
       await this.store
-        .updateGroupNumbers(groupId, targetNumbers)
-        .then(numbers => {
-          if (!numbers) {
+        .updateGroupNumbers(groupId, targetIdentifiers)
+        .then(identifiers => {
+          if (!identifiers) {
             return Promise.reject(new Error("Unknown Group"));
           }
-          proto.group.members = numbers;
+          proto.group.members = identifiers;
         });
     } else {
-      proto.group.members = targetNumbers;
+      proto.group.members = targetIdentifiers;
     }
 
     return this.makeAttachmentPointer(avatar).then(attachment => {
@@ -1091,60 +1192,62 @@ class MessageSender {
     });
   }
 
-  async addNumberToGroup(groupId, newNumbers, options) {
+  async addIdentifierToGroup(groupId, newIdentifiers, options) {
     const proto = DataMessage.create();
     proto.group = GroupContext.create();
     proto.group.id = stringToArrayBuffer(groupId);
     proto.group.type = GroupContext.Type.UPDATE;
     if (this.store.hasGroups()) {
-      if (typeof newNumbers === "string") {
-        newNumbers = [newNumbers];
+      if (typeof newIdentifiers === "string") {
+        newIdentifiers = [newIdentifiers];
       }
-      await this.store.addGroupNumbers(groupId, newNumbers).then(numbers => {
-        if (!numbers) {
-          return Promise.reject(new Error("Unknown Group"));
-        }
-        proto.group.members = numbers;
-      });
+      await this.store
+        .addGroupNumbers(groupId, newIdentifiers)
+        .then(identifiers => {
+          if (!identifiers) {
+            return Promise.reject(new Error("Unknown Group"));
+          }
+          proto.group.members = numbers;
+        });
     } else {
-      proto.group.members = newNumbers;
+      proto.group.members = newIdentifiers;
     }
     return this.sendGroupProto(proto.group.members, proto, Date.now(), options);
   }
 
-  async setGroupName(groupId, name, groupNumbers, options) {
+  async setGroupName(groupId, name, groupIdentifiers, options) {
     const proto = DataMessage.create();
     proto.group = GroupContext.create();
     proto.group.id = stringToArrayBuffer(groupId);
     proto.group.type = GroupContext.Type.UPDATE;
     proto.group.name = name;
     if (this.store.hasGroups()) {
-      await this.store.getGroupNumbers(groupId).then(numbers => {
-        if (!numbers) {
+      await this.store.getGroupNumbers(groupId).then(identifiers => {
+        if (!identifiers) {
           return Promise.reject(new Error("Unknown Group"));
         }
-        proto.group.members = numbers;
+        proto.group.members = identifiers;
       });
     } else {
-      proto.group.members = groupNumbers;
+      proto.group.members = groupIdentifiers;
     }
     return this.sendGroupProto(proto.group.members, proto, Date.now(), options);
   }
 
-  async setGroupAvatar(groupId, avatar, groupNumbers, options) {
+  async setGroupAvatar(groupId, avatar, groupIdentifiers, options) {
     const proto = DataMessage.create();
     proto.group = GroupContext.create();
     proto.group.id = stringToArrayBuffer(groupId);
     proto.group.type = GroupContext.Type.UPDATE;
     if (this.store.hasGroups()) {
-      await this.store.getGroupNumbers(groupId).then(numbers => {
-        if (!numbers) {
+      await this.store.getGroupNumbers(groupId).then(identifiers => {
+        if (!identifiers) {
           return Promise.reject(new Error("Unknown Group"));
         }
         proto.group.members = numbers;
       });
     } else {
-      proto.group.members = groupNumbers;
+      proto.group.members = groupIdentifiers;
     }
     return this.makeAttachmentPointer(avatar).then(attachment => {
       proto.group.avatar = attachment;
@@ -1157,17 +1260,17 @@ class MessageSender {
     });
   }
 
-  async leaveGroup(groupId, groupNumbers, options) {
+  async leaveGroup(groupId, groupIdentifiers, options) {
     const proto = DataMessage.create();
     proto.group = GroupContext.create();
     proto.group.id = stringToArrayBuffer(groupId);
     proto.group.type = GroupContext.Type.QUIT;
     if (this.store.hasGroups()) {
-      await this.store.getGroupNumbers(groupId).then(numbers => {
-        if (!numbers) {
+      await this.store.getGroupNumbers(groupId).then(identifiers => {
+        if (!identifiers) {
           return Promise.reject(new Error("Unknown Group"));
         }
-        proto.group.members = numbers;
+        proto.group.members = identifiers;
         return this.store
           .deleteGroup(groupId)
           .then(() =>
@@ -1175,28 +1278,31 @@ class MessageSender {
           );
       });
     }
-    proto.group.members = groupNumbers;
+    proto.group.members = groupIdentifiers;
     return this.sendGroupProto(proto.group.members, proto, Date.now(), options);
   }
 
   async sendExpirationTimerUpdateToGroup(
     groupId,
-    groupNumbers,
+    groupIdentifiers,
     expireTimer,
     timestamp,
     options
   ) {
     if (this.store.hasGroups()) {
-      groupNumbers = await this.store.getGroupNumbers(groupId);
-      if (!groupNumbers) {
+      groupIdentifiers = await this.store.getGroupNumbers(groupId);
+      if (!groupIdentifiers) {
         return Promise.reject(new Error("Unknown Group"));
       }
     }
 
-    const me = await this.store.getNumber();
-    const numbers = groupNumbers.filter(number => number !== me);
+    const myNumber = await this.store.getNumber();
+    const myUuid = await this.store.getUuid();
+    const recipients = groupIdentifiers.filter(
+      identifier => identifier !== myNumber && identifier !== myUuid
+    );
     const attrs = {
-      recipients: numbers,
+      recipient,
       timestamp,
       expireTimer,
       flags: DataMessage.Flags.EXPIRATION_TIMER_UPDATE,
@@ -1206,10 +1312,10 @@ class MessageSender {
       }
     };
 
-    if (numbers.length === 0) {
+    if (recipients.length === 0) {
       return Promise.resolve({
-        successfulNumbers: [],
-        failoverNumbers: [],
+        successfulIdentifiers: [],
+        failoverIdentifiers: [],
         errors: [],
         unidentifiedDeliveries: [],
         dataMessage: await this.getMessageProtoObj(attrs)
@@ -1219,15 +1325,15 @@ class MessageSender {
     return this.sendMessage(attrs, options);
   }
 
-  async sendExpirationTimerUpdateToNumber(
-    number,
+  sendExpirationTimerUpdateToIdentifier(
+    identifier,
     expireTimer,
     timestamp,
     options = {}
   ) {
     return this.sendMessage(
       {
-        recipients: [number],
+        recipients: [identifier],
         timestamp,
         expireTimer,
         flags: DataMessage.Flags.EXPIRATION_TIMER_UPDATE

@@ -5,6 +5,7 @@
 "use strict";
 
 const btoa = require("btoa");
+const PQueue = require("p-queue");
 const debug = require("debug")("libsignal-service:AccountManager");
 const EventTarget = require("./EventTarget.js");
 const Event = require("./Event.js");
@@ -29,19 +30,6 @@ const VerifiedStatus = {
   VERIFIED: 1,
   UNVERIFIED: 2
 };
-
-function getNumber(numberId) {
-  if (!numberId || !numberId.length) {
-    return numberId;
-  }
-
-  const parts = numberId.split(".");
-  if (!parts.length) {
-    return numberId;
-  }
-
-  return parts[0];
-}
 
 class AccountManager extends EventTarget {
   constructor(username, password, store) {
@@ -145,7 +133,7 @@ class AccountManager extends EventTarget {
             .then(clearSessionsAndPreKeys)
             .then(generateKeys)
             .then(keys => registerKeys(keys).then(() => confirmKeys(keys)))
-            .then(() => registrationDone(this.username));
+            .then(() => registrationDone({ number: this.username }));
         }
       )
     );
@@ -218,16 +206,15 @@ class AccountManager extends EventTarget {
                             provisionMessage.profileKey,
                             deviceName,
                             provisionMessage.userAgent,
-                            provisionMessage.readReceipts
+                            provisionMessage.readReceipts,
+                            { uuid: provisionMessage.uuid }
                           )
                             .then(clearSessionsAndPreKeys)
                             .then(generateKeys)
                             .then(keys =>
                               registerKeys(keys).then(() => confirmKeys(keys))
                             )
-                            .then(() =>
-                              registrationDone(provisionMessage.number)
-                            );
+                            .then(() => registrationDone(provisionMessage));
                         }
                       )
                     )
@@ -321,10 +308,10 @@ class AccountManager extends EventTarget {
   }
 
   queueTask(task) {
+    this.pendingQueue = this.pendingQueue || new PQueue({ concurrency: 1 });
     const taskWithTimeout = createTaskWithTimeout(task);
-    this.pending = this.pending.then(taskWithTimeout, taskWithTimeout);
 
-    return this.pending;
+    return this.pendingQueue.add(taskWithTimeout);
   }
 
   cleanSignedPreKeys() {
@@ -332,7 +319,7 @@ class AccountManager extends EventTarget {
     return this.store.loadSignedPreKeys().then(allKeys => {
       allKeys.sort((a, b) => (a.created_at || 0) - (b.created_at || 0));
       allKeys.reverse(); // we want the most recent first
-      let confirmed = allKeys.filter(key => key.confirmed);
+      const confirmed = allKeys.filter(key => key.confirmed);
       const unconfirmed = allKeys.filter(key => !key.confirmed);
 
       const recent = allKeys[0] ? allKeys[0].keyId : "none";
@@ -350,7 +337,7 @@ class AccountManager extends EventTarget {
       let confirmedCount = confirmed.length;
 
       // Keep MINIMUM_KEYS confirmed keys, then drop if older than a week
-      confirmed = confirmed.forEach((key, index) => {
+      confirmed.forEach((key, index) => {
         if (index < MINIMUM_KEYS) {
           return;
         }
@@ -362,7 +349,7 @@ class AccountManager extends EventTarget {
             "Removing confirmed signed prekey:",
             key.keyId,
             "with timestamp:",
-            createdAt
+            new Date(createdAt).toJSON()
           );
           this.store.removeSignedPreKey(key.keyId);
           confirmedCount -= 1;
@@ -385,7 +372,7 @@ class AccountManager extends EventTarget {
             "Removing unconfirmed signed prekey:",
             key.keyId,
             "with timestamp:",
-            createdAt
+            new Date(createdAt).toJSON()
           );
           this.store.removeSignedPreKey(key.keyId);
         }
@@ -407,12 +394,19 @@ class AccountManager extends EventTarget {
     const registrationId = libsignal.KeyHelper.generateRegistrationId();
 
     const previousNumber = this.store.getNumber();
+    const previousUuid = this.store.getUuid();
 
     const encryptedDeviceName = await this.encryptDeviceName(
       deviceName,
       identityKeyPair
     );
     await this.deviceNameIsEncrypted();
+
+    debug(
+      `createAccount: Number is ${number}, password has length: ${
+        password ? password.length : "none"
+      }`
+    );
 
     const response = await this.server.confirmCode(
       number,
@@ -423,10 +417,21 @@ class AccountManager extends EventTarget {
       { accessKey }
     );
 
-    if (previousNumber && previousNumber !== number) {
-      debug(
-        "New number is different from old number; deleting all previous data"
-      );
+    const numberChanged = previousNumber && previousNumber !== number;
+    const uuidChanged =
+      previousUuid && response.uuid && previousUuid !== response.uuid;
+
+    if (numberChanged || uuidChanged) {
+      if (numberChanged) {
+        debug(
+          "New number is different from old number; deleting all previous data"
+        );
+      }
+      if (uuidChanged) {
+        debug(
+          "New uuid is different from old uuid; deleting all previous data"
+        );
+      }
 
       try {
         await this.store.removeAllData();
@@ -441,10 +446,27 @@ class AccountManager extends EventTarget {
 
     await Promise.all([this.store.removeAllConfiguration()]);
 
+    // `setNumberAndDeviceId` and `setUuidAndDeviceId` need to be called
+    // before `saveIdentifyWithAttributes` since `saveIdentityWithAttributes`
+    // indirectly calls `ConversationController.getConverationId()` which
+    // initializes the conversation for the given number (our number) which
+    // calls out to the user storage API to get the stored UUID and number
+    // information.
+
+    await this.store.setNumberAndDeviceId(
+      number,
+      response.deviceId || 1,
+      deviceName
+    );
+
+    const setUuid = response.uuid;
+    if (setUuid) {
+      await this.store.setUuidAndDeviceId(setUuid, response.deviceId || 1);
+    }
+
     // update our own identity key, which may have changed
     // if we're relinking after a reinstall on the master device
     await this.store.saveIdentityWithAttributes(number, {
-      id: number,
       publicKey: identityKeyPair.pubKey,
       firstUse: true,
       timestamp: Date.now(),
@@ -463,11 +485,6 @@ class AccountManager extends EventTarget {
     }
     await this.store.setReadReceiptSetting(Boolean(readReceipts));
 
-    await this.store.setNumberAndDeviceId(
-      number,
-      response.deviceId || 1,
-      deviceName
-    );
     const regionCode = libphonenumber.util.getRegionCodeForNumber(number);
     await this.store.setRegionCode(regionCode);
   }
@@ -548,11 +565,19 @@ class AccountManager extends EventTarget {
     });
   }
 
-  async registrationDone() {
+  async registrationDone({ uuid, number }) {
     debug("registration done");
 
     // Ensure that we always have a conversation for ourself
     //await ConversationController.getOrCreateAndWait(number, "private");
+    //const conversation = await ConversationController.getOrCreateAndWait(
+    //  number || uuid,
+    //  'private'
+    //);
+    //conversation.updateE164(number);
+    //conversation.updateUuid(uuid);
+
+    debug("dispatching registration event");
 
     this.dispatchEvent(new Event("registration"));
   }
