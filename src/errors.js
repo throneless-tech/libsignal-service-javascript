@@ -2,7 +2,7 @@
  * vim: ts=2:sw=2:expandtab
  */
 
-"use strict";
+
 
 // eslint-disable-next-line func-names
 function appendStack(newError, originalError) {
@@ -13,7 +13,7 @@ function appendStack(newError, originalError) {
 class ReplayableError extends Error {
   constructor(options = {}) {
     super(options.message);
-    this.name = options.name || "ReplayableError";
+    this.name = options.name || 'ReplayableError';
     this.message = options.message;
 
     // Maintains proper stack trace, where our error was thrown (only available on V8)
@@ -28,33 +28,35 @@ class ReplayableError extends Error {
 
 class IncomingIdentityKeyError extends ReplayableError {
   constructor(identifier, message, key) {
-    this.identifier = identifier.split(".")[0];
+    const newIdentifier = identifier.split('.')[0];
     super({
-      name: "IncomingIdentityKeyError",
-      message: `The identity of ${this.identifier} has changed.`
+      name: 'IncomingIdentityKeyError',
+      message: `The identity of ${newIdentifier} has changed.`,
     });
     this.identityKey = key;
+    this.identifier = newIdentifier;
   }
 }
 
 class OutgoingIdentityKeyError extends ReplayableError {
   constructor(identifier, message, timestamp, identityKey) {
-    this.identifier = identifier.split(".")[0];
+    const newIdentifier = identifier.split('.')[0];
     super({
-      name: "OutgoingIdentityKeyError",
-      message: `The identity of ${this.identifier} has changed.`
+      name: 'OutgoingIdentityKeyError',
+      message: `The identity of ${newIdentifier} has changed.`,
     });
     this.identityKey = identityKey;
+    this.identifier = newIdentifier;
   }
 }
 
 class OutgoingMessageError extends ReplayableError {
   constructor(identifier, message, timestamp, httpError) {
     super({
-      name: "OutgoingMessageError",
-      message: httpError ? httpError.message : "no http error"
+      name: 'OutgoingMessageError',
+      message: httpError ? httpError.message : 'no http error',
     });
-    this.identifier = identifier.split(".")[0];
+    [this.identifier ] = identifier.split('.');
     if (httpError) {
       this.code = httpError.code;
       appendStack(this, httpError);
@@ -65,8 +67,8 @@ class OutgoingMessageError extends ReplayableError {
 class SendMessageNetworkError extends ReplayableError {
   constructor(identifier, jsonData, httpError) {
     super({
-      name: "SendMessageNetworkError",
-      message: httpError.message
+      name: 'SendMessageNetworkError',
+      message: httpError.message,
     });
     this.identifier = identifier;
     this.code = httpError.code;
@@ -77,8 +79,8 @@ class SendMessageNetworkError extends ReplayableError {
 class SignedPreKeyRotationError extends ReplayableError {
   constructor() {
     super({
-      name: "SignedPreKeyRotationError",
-      message: "Too many signed prekey rotation failures"
+      name: 'SignedPreKeyRotationError',
+      message: 'Too many signed prekey rotation failures',
     });
   }
 }
@@ -86,8 +88,8 @@ class SignedPreKeyRotationError extends ReplayableError {
 class MessageError extends ReplayableError {
   constructor(message, httpError) {
     super({
-      name: "MessageError",
-      message: httpError.message
+      name: 'MessageError',
+      message: httpError.message,
     });
     this.code = httpError.code;
     appendStack(this, httpError);
@@ -98,7 +100,7 @@ class UnregisteredUserError extends Error {
   constructor(identifier, httpError) {
     super(httpError.message);
     this.message = httpError.message;
-    this.name = "UnregisteredUserError";
+    this.name = 'UnregisteredUserError';
     // Maintains proper stack trace, where our error was thrown (only available on V8)
     //   via https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Error
     if (Error.captureStackTrace) {

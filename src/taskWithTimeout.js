@@ -2,23 +2,23 @@
  * vim: ts=2:sw=2:expandtab
  */
 
-"use strict";
+
 
 /* eslint-disable more/no-then */
-const debug = require("debug")("libsignal-service:TaskWithTimeout");
+const debug = require('debug')('libsignal-service:TaskWithTimeout');
 
 // eslint-disable-next-line func-names
 exports = module.exports = (task, id, options = {}) => {
   const timeout = options.timeout || 1000 * 60 * 2; // two minutes
 
-  const errorForStack = new Error("for stack");
+  const errorForStack = new Error('for stack');
   return () =>
     new Promise((resolve, reject) => {
       let complete = false;
       let timer = setTimeout(() => {
         if (!complete) {
-          const message = `${id ||
-            ""} task did not complete in time. Calling stack: ${
+          const message = `${id
+            || ''} task did not complete in time. Calling stack: ${
             errorForStack.stack
           }`;
 
@@ -37,8 +37,8 @@ exports = module.exports = (task, id, options = {}) => {
           }
         } catch (error) {
           debug(
-            id || "",
-            "task ran into problem canceling timer. Calling stack:",
+            id || '',
+            'task ran into problem canceling timer. Calling stack:',
             errorForStack.stack
           );
         }

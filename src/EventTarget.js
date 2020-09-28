@@ -2,63 +2,63 @@
  * vim: ts=2:sw=2:expandtab
  */
 
-"use strict";
+
 
 // eslint-disable-next-line func-names
 
-const Event = require("./Event.js");
+const Event = require('./Event.js');
 
 class EventTarget {
-  constructor() {}
-
   dispatchEvent(ev) {
     if (!(ev instanceof Event)) {
-      throw new Error("Expects an event");
+      throw new Error('Expects an event');
     }
-    if (this.listeners === null || typeof this.listeners !== "object") {
+    if (this.listeners === null || typeof this.listeners !== 'object') {
       this.listeners = {};
     }
     const listeners = this.listeners[ev.type];
     const results = [];
-    if (typeof listeners === "object") {
+    if (typeof listeners === 'object') {
       for (let i = 0, max = listeners.length; i < max; i += 1) {
         const listener = listeners[i];
-        if (typeof listener === "function") {
+        if (typeof listener === 'function') {
           results.push(listener.call(null, ev));
         }
       }
     }
     return results;
   }
+
   addEventListener(eventName, callback) {
-    if (typeof eventName !== "string") {
-      throw new Error("First argument expects a string");
+    if (typeof eventName !== 'string') {
+      throw new Error('First argument expects a string');
     }
-    if (typeof callback !== "function") {
-      throw new Error("Second argument expects a function");
+    if (typeof callback !== 'function') {
+      throw new Error('Second argument expects a function');
     }
-    if (this.listeners === null || typeof this.listeners !== "object") {
+    if (this.listeners === null || typeof this.listeners !== 'object') {
       this.listeners = {};
     }
     let listeners = this.listeners[eventName];
-    if (typeof listeners !== "object") {
+    if (typeof listeners !== 'object') {
       listeners = [];
     }
     listeners.push(callback);
     this.listeners[eventName] = listeners;
   }
+
   removeEventListener(eventName, callback) {
-    if (typeof eventName !== "string") {
-      throw new Error("First argument expects a string");
+    if (typeof eventName !== 'string') {
+      throw new Error('First argument expects a string');
     }
-    if (typeof callback !== "function") {
-      throw new Error("Second argument expects a function");
+    if (typeof callback !== 'function') {
+      throw new Error('Second argument expects a function');
     }
-    if (this.listeners === null || typeof this.listeners !== "object") {
+    if (this.listeners === null || typeof this.listeners !== 'object') {
       this.listeners = {};
     }
     const listeners = this.listeners[eventName];
-    if (typeof listeners === "object") {
+    if (typeof listeners === 'object') {
       for (let i = 0; i < listeners.length; i += 1) {
         if (listeners[i] === callback) {
           listeners.splice(i, 1);
@@ -68,6 +68,7 @@ class EventTarget {
     }
     this.listeners[eventName] = listeners;
   }
+
   extend(obj) {
     // eslint-disable-next-line no-restricted-syntax, guard-for-in
     for (const prop in obj) {

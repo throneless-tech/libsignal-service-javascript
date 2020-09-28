@@ -2,17 +2,15 @@
  * vim: ts=2:sw=2:expandtab
  */
 
-"use strict";
 
-const btoa = require("btoa");
-const ByteBuffer = require("bytebuffer");
-const libsignal = require("@throneless/libsignal-protocol");
-const WebCrypto = require("node-webcrypto-ossl");
+
+const btoa = require('btoa');
+const ByteBuffer = require('bytebuffer');
+const libsignal = require('@throneless/libsignal-protocol');
+const WebCrypto = require('node-webcrypto-ossl');
+
 const webcrypto = new WebCrypto();
-const helpers = require("./helpers.js");
-const WebSocketMessage = require("./protobufs.js").lookupType(
-  "signalservice.WebSocketMessage"
-);
+const helpers = require('./helpers.js');
 
 /* eslint-disable more/no-then, no-bitwise */
 
@@ -21,9 +19,9 @@ const {
   encrypt,
   decrypt,
   calculateMAC,
-  getRandomBytes
+  getRandomBytes,
 } = libsignal._crypto.crypto;
-const verifyMAC = libsignal._crypto.verifyMAC;
+const {verifyMAC} = libsignal._crypto;
 
 const PROFILE_IV_LENGTH = 12; // bytes
 const PROFILE_KEY_LENGTH = 32; // bytes
@@ -32,7 +30,7 @@ const PROFILE_NAME_PADDED_LENGTH = 53; // bytes
 
 // Private functions from libtextsecure/crypto.js
 function _verifyDigest(data, theirDigest) {
-  return webcrypto.subtle.digest({ name: "SHA-256" }, data).then(ourDigest => {
+  return webcrypto.subtle.digest({ name: 'SHA-256' }, data).then(ourDigest => {
     const a = new Uint8Array(ourDigest);
     const b = new Uint8Array(theirDigest);
     let result = 0;
@@ -40,22 +38,22 @@ function _verifyDigest(data, theirDigest) {
       result |= a[i] ^ b[i];
     }
     if (result !== 0) {
-      throw new Error("Bad digest");
+      throw new Error('Bad digest');
     }
   });
 }
 function _calculateDigest(data) {
-  return webcrypto.subtle.digest({ name: "SHA-256" }, data);
+  return webcrypto.subtle.digest({ name: 'SHA-256' }, data);
 }
 
 // Public functions from libtextsecure/crypto.js
 // Decrypts message into a raw string
 function decryptWebsocketMessage(message, signalingKey) {
   if (signalingKey.byteLength !== 52) {
-    throw new Error("Got invalid length signalingKey");
+    throw new Error('Got invalid length signalingKey');
   }
   if (message.byteLength < 1 + 16 + 10) {
-    throw new Error("Got invalid length message");
+    throw new Error('Got invalid length message');
   }
   if (new Uint8Array(message)[0] !== 1) {
     throw new Error(`Got bad version number: ${message[0]}`);
@@ -76,10 +74,10 @@ function decryptWebsocketMessage(message, signalingKey) {
 
 function decryptAttachment(encryptedBin, keys, theirDigest) {
   if (keys.byteLength !== 64) {
-    throw new Error("Got invalid length attachment keys");
+    throw new Error('Got invalid length attachment keys');
   }
   if (encryptedBin.byteLength < 16 + 32) {
-    throw new Error("Got invalid length attachment");
+    throw new Error('Got invalid length attachment');
   }
 
   const aesKey = keys.slice(0, 32);
@@ -112,10 +110,10 @@ function encryptAttachment(plaintext, keys, iv) {
   }
 
   if (keys.byteLength !== 64) {
-    throw new Error("Got invalid length attachment keys");
+    throw new Error('Got invalid length attachment keys');
   }
   if (iv.byteLength !== 16) {
-    throw new Error("Got invalid length attachment iv");
+    throw new Error('Got invalid length attachment iv');
   }
   const aesKey = keys.slice(0, 32);
   const macKey = keys.slice(32, 64);
@@ -131,7 +129,7 @@ function encryptAttachment(plaintext, keys, iv) {
       encryptedBin.set(new Uint8Array(mac), 16 + ciphertext.byteLength);
       return _calculateDigest(encryptedBin.buffer).then(digest => ({
         ciphertext: encryptedBin.buffer,
-        digest
+        digest,
       }));
     });
   });
@@ -140,17 +138,17 @@ function encryptAttachment(plaintext, keys, iv) {
 function encryptProfile(data, key) {
   const iv = this.getRandomBytes(PROFILE_IV_LENGTH);
   if (key.byteLength !== PROFILE_KEY_LENGTH) {
-    throw new Error("Got invalid length profile key");
+    throw new Error('Got invalid length profile key');
   }
   if (iv.byteLength !== PROFILE_IV_LENGTH) {
-    throw new Error("Got invalid length profile iv");
+    throw new Error('Got invalid length profile iv');
   }
   return webcrypto.subtle
-    .importKey("raw", key, { name: "AES-GCM" }, false, ["encrypt"])
+    .importKey('raw', key, { name: 'AES-GCM' }, false, ['encrypt'])
     .then(keyForEncryption =>
       webcrypto.subtle
         .encrypt(
-          { name: "AES-GCM", iv, tagLength: PROFILE_TAG_LENGTH },
+          { name: 'AES-GCM', iv, tagLength: PROFILE_TAG_LENGTH },
           keyForEncryption,
           data
         )
@@ -172,27 +170,26 @@ function decryptProfile(data, key) {
   const iv = data.slice(0, PROFILE_IV_LENGTH);
   const ciphertext = data.slice(PROFILE_IV_LENGTH, data.byteLength);
   if (key.byteLength !== PROFILE_KEY_LENGTH) {
-    throw new Error("Got invalid length profile key");
+    throw new Error('Got invalid length profile key');
   }
   if (iv.byteLength !== PROFILE_IV_LENGTH) {
-    throw new Error("Got invalid length profile iv");
+    throw new Error('Got invalid length profile iv');
   }
   const error = new Error(); // save stack
   return webcrypto.subtle
-    .importKey("raw", key, { name: "AES-GCM" }, false, ["decrypt"])
+    .importKey('raw', key, { name: 'AES-GCM' }, false, ['decrypt'])
     .then(keyForEncryption =>
       webcrypto.subtle
         .decrypt(
-          { name: "AES-GCM", iv, tagLength: PROFILE_TAG_LENGTH },
+          { name: 'AES-GCM', iv, tagLength: PROFILE_TAG_LENGTH },
           keyForEncryption,
           ciphertext
         )
         .catch(e => {
-          if (e.name === "OperationError") {
+          if (e.name === 'OperationError') {
             // bad mac, basically.
-            error.message =
-              "Failed to decrypt profile data. Most likely the profile key has changed.";
-            error.name = "ProfileDecryptError";
+            error.message =              'Failed to decrypt profile data. Most likely the profile key has changed.';
+            error.name = 'ProfileDecryptError';
             throw error;
           }
         })
@@ -206,7 +203,7 @@ function encryptProfileName(name, key) {
 }
 
 function decryptProfileName(encryptedProfileName, key) {
-  const data = ByteBuffer.wrap(encryptedProfileName, "base64").toArrayBuffer();
+  const data = ByteBuffer.wrap(encryptedProfileName, 'base64').toArrayBuffer();
   return this.decryptProfile(data, key).then(decrypted => {
     const padded = new Uint8Array(decrypted);
 
@@ -235,7 +232,7 @@ function decryptProfileName(encryptedProfileName, key) {
         ? ByteBuffer.wrap(padded)
             .slice(givenEnd + 1, familyEnd)
             .toArrayBuffer()
-        : null
+        : null,
     };
   });
 }
@@ -247,32 +244,32 @@ function typedArrayToArrayBuffer(typedArray) {
 }
 
 function arrayBufferToBase64(arrayBuffer) {
-  return ByteBuffer.wrap(arrayBuffer).toString("base64");
+  return ByteBuffer.wrap(arrayBuffer).toString('base64');
 }
 function base64ToArrayBuffer(base64string) {
-  return ByteBuffer.wrap(base64string, "base64").toArrayBuffer();
+  return ByteBuffer.wrap(base64string, 'base64').toArrayBuffer();
 }
 
 function fromEncodedBinaryToArrayBuffer(key) {
-  return ByteBuffer.wrap(key, "binary").toArrayBuffer();
+  return ByteBuffer.wrap(key, 'binary').toArrayBuffer();
 }
 
 function bytesFromString(string) {
-  return ByteBuffer.wrap(string, "utf8").toArrayBuffer();
+  return ByteBuffer.wrap(string, 'utf8').toArrayBuffer();
 }
 function stringFromBytes(buffer) {
-  return ByteBuffer.wrap(buffer).toString("utf8");
+  return ByteBuffer.wrap(buffer).toString('utf8');
 }
 function hexFromBytes(buffer) {
-  return ByteBuffer.wrap(buffer).toString("hex");
+  return ByteBuffer.wrap(buffer).toString('hex');
 }
 function bytesFromHexString(string) {
-  return ByteBuffer.wrap(string, "hex").toArrayBuffer();
+  return ByteBuffer.wrap(string, 'hex').toArrayBuffer();
 }
 
 async function deriveStickerPackKey(packKey) {
   const salt = getZeroes(32);
-  const info = bytesFromString("Sticker Pack");
+  const info = bytesFromString('Sticker Pack');
 
   const [part1, part2] = await libsignal.HKDF.deriveSecrets(
     packKey,
@@ -293,10 +290,10 @@ async function encryptDeviceName(deviceName, identityPublic) {
     ephemeralKeyPair.privKey
   );
 
-  const key1 = await hmacSha256(masterSecret, bytesFromString("auth"));
+  const key1 = await hmacSha256(masterSecret, bytesFromString('auth'));
   const syntheticIv = getFirstBytes(await hmacSha256(key1, plaintext), 16);
 
-  const key2 = await hmacSha256(masterSecret, bytesFromString("cipher"));
+  const key2 = await hmacSha256(masterSecret, bytesFromString('cipher'));
   const cipherKey = await hmacSha256(key2, syntheticIv);
 
   const counter = getZeroes(16);
@@ -305,7 +302,7 @@ async function encryptDeviceName(deviceName, identityPublic) {
   return {
     ephemeralPublic: ephemeralKeyPair.pubKey,
     syntheticIv,
-    ciphertext
+    ciphertext,
   };
 }
 
@@ -318,17 +315,17 @@ async function decryptDeviceName(
     identityPrivate
   );
 
-  const key2 = await hmacSha256(masterSecret, bytesFromString("cipher"));
+  const key2 = await hmacSha256(masterSecret, bytesFromString('cipher'));
   const cipherKey = await hmacSha256(key2, syntheticIv);
 
   const counter = getZeroes(16);
   const plaintext = await decryptAesCtr(cipherKey, ciphertext, counter);
 
-  const key1 = await hmacSha256(masterSecret, bytesFromString("auth"));
+  const key1 = await hmacSha256(masterSecret, bytesFromString('auth'));
   const ourSyntheticIv = getFirstBytes(await hmacSha256(key1, plaintext), 16);
 
   if (!constantTimeEqual(ourSyntheticIv, syntheticIv)) {
-    throw new Error("decryptDeviceName: synthetic IV did not match");
+    throw new Error('decryptDeviceName: synthetic IV did not match');
   }
 
   return stringFromBytes(plaintext);
@@ -432,7 +429,7 @@ async function decryptSymmetric(key, data) {
   );
   if (!constantTimeEqual(theirMac, ourMac)) {
     throw new Error(
-      "decryptSymmetric: Failed to decrypt; MAC verification failed"
+      'decryptSymmetric: Failed to decrypt; MAC verification failed'
     );
   }
 
@@ -457,17 +454,17 @@ function constantTimeEqual(left, right) {
 
 async function hmacSha256(key, plaintext) {
   const algorithm = {
-    name: "HMAC",
-    hash: "SHA-256"
+    name: 'HMAC',
+    hash: 'SHA-256',
   };
   const extractable = false;
 
   const cryptoKey = await webcrypto.subtle.importKey(
-    "raw",
+    'raw',
     key,
     algorithm,
     extractable,
-    ["sign"]
+    ['sign']
   );
 
   return webcrypto.subtle.sign(algorithm, cryptoKey, plaintext);
@@ -475,17 +472,17 @@ async function hmacSha256(key, plaintext) {
 
 async function _encrypt_aes256_CBC_PKCSPadding(key, iv, plaintext) {
   const algorithm = {
-    name: "AES-CBC",
-    iv
+    name: 'AES-CBC',
+    iv,
   };
   const extractable = false;
 
   const cryptoKey = await webcrypto.subtle.importKey(
-    "raw",
+    'raw',
     key,
     algorithm,
     extractable,
-    ["encrypt"]
+    ['encrypt']
   );
 
   return webcrypto.subtle.encrypt(algorithm, cryptoKey, plaintext);
@@ -493,35 +490,35 @@ async function _encrypt_aes256_CBC_PKCSPadding(key, iv, plaintext) {
 
 async function _decrypt_aes256_CBC_PKCSPadding(key, iv, plaintext) {
   const algorithm = {
-    name: "AES-CBC",
-    iv
+    name: 'AES-CBC',
+    iv,
   };
   const extractable = false;
 
   const cryptoKey = await webcrypto.subtle.importKey(
-    "raw",
+    'raw',
     key,
     algorithm,
     extractable,
-    ["decrypt"]
+    ['decrypt']
   );
   return webcrypto.subtle.decrypt(algorithm, cryptoKey, plaintext);
 }
 
 async function encryptAesCtr(key, plaintext, counter) {
   const extractable = false;
-  var algorithm = {
-    name: "AES-CTR",
+  const algorithm = {
+    name: 'AES-CTR',
     counter: new Uint8Array(counter),
-    length: 128
+    length: 128,
   };
 
   const cryptoKey = await webcrypto.subtle.importKey(
-    "raw",
+    'raw',
     key,
     algorithm,
     extractable,
-    ["encrypt"]
+    ['encrypt']
   );
 
   // webcrypto module importKey overwrites length
@@ -537,18 +534,18 @@ async function encryptAesCtr(key, plaintext, counter) {
 
 async function decryptAesCtr(key, ciphertext, counter) {
   const extractable = false;
-  var algorithm = {
-    name: "AES-CTR",
+  const algorithm = {
+    name: 'AES-CTR',
     counter: new Uint8Array(counter),
-    length: 128
+    length: 128,
   };
 
   const cryptoKey = await webcrypto.subtle.importKey(
-    "raw",
+    'raw',
     key,
     algorithm,
     extractable,
-    ["decrypt"]
+    ['decrypt']
   );
 
   // webcrypto module importKey overwrites length
@@ -563,28 +560,28 @@ async function decryptAesCtr(key, ciphertext, counter) {
 
 async function _encrypt_aes_gcm(key, iv, plaintext) {
   const algorithm = {
-    name: "AES-GCM",
-    iv
+    name: 'AES-GCM',
+    iv,
   };
   const extractable = false;
 
   const cryptoKey = await webcrypto.subtle.importKey(
-    "raw",
+    'raw',
     key,
     algorithm,
     extractable,
-    ["encrypt"]
+    ['encrypt']
   );
-  return crypto.subtle.encrypt(algorithm, cryptoKey, plaintext);
+  return webcrypto.subtle.encrypt(algorithm, cryptoKey, plaintext);
 }
 
 // Utility
 
-//function getRandomBytes(n) {
+// function getRandomBytes(n) {
 //  const bytes = new Uint8Array(n);
 //  webcrypto.getRandomValues(bytes);
 //  return bytes;
-//}
+// }
 
 function getRandomValue(low, high) {
   const diff = high - low;
@@ -644,7 +641,7 @@ function concatenateBytes(...elements) {
     position += element.byteLength;
   }
   if (position !== result.length) {
-    throw new Error("problem concatenating!");
+    throw new Error('problem concatenating!');
   }
 
   return result.buffer;
@@ -718,6 +715,7 @@ exports = module.exports = {
   constantTimeEqual,
   decryptAesCtr,
   decryptDeviceName,
+  getAttachmentLabel,
   decryptFile,
   decryptSymmetric,
   deriveAccessKey,
@@ -743,5 +741,5 @@ exports = module.exports = {
   splitBytes,
   stringFromBytes,
   trimBytes,
-  verifyAccessKey
+  verifyAccessKey,
 };

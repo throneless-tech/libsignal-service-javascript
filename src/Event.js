@@ -3,7 +3,7 @@
  *
  */
 
-"use strict";
+
 
 class Event {
   constructor(type) {

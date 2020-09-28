@@ -2,16 +2,17 @@
  * vim: ts=2:sw=2:expandtab
  */
 
-"use strict";
 
-const debug = require("debug")("libsignal-service:WebSocketResource");
-const EventTarget = require("./EventTarget.js");
-const Event = require("./Event.js");
-const FileReader = require("filereader");
-const Long = require("long");
-const crypto = require("./crypto.js");
-const protobuf = require("./protobufs.js");
-const WebSocketMessage = protobuf.lookupType("signalservice.WebSocketMessage");
+
+const debug = require('debug')('libsignal-service:WebSocketResource');
+const FileReader = require('filereader');
+const Long = require('long');
+const EventTarget = require('./EventTarget.js');
+const Event = require('./Event.js');
+const crypto = require('./crypto.js');
+const protobuf = require('./protobufs.js');
+
+const WebSocketMessage = protobuf.lookupType('signalservice.WebSocketMessage');
 // eslint-disable-next-line func-names
 /*
  * WebSocket-Resources
@@ -66,7 +67,7 @@ class IncomingWebSocketRequest {
     this.respond = (status, message) => {
       const wsmessage = WebSocketMessage.create({
         type: WebSocketMessage.Type.RESPONSE,
-        response: { id: request.id, message, status }
+        response: { id: request.id, message, status },
       });
       socket.send(WebSocketMessage.encode(wsmessage).finish());
     };
@@ -85,8 +86,8 @@ class OutgoingWebSocketRequest {
         path: request.path,
         body: request.body,
         headers: request.headers,
-        id: request.id
-      }
+        id: request.id,
+      },
     });
     socket.send(WebSocketMessage.encode(message).finish());
   }
@@ -97,7 +98,7 @@ class KeepAlive {
     if (websocketResource instanceof WebSocketResource) {
       this.path = opts.path;
       if (this.path === undefined) {
-        this.path = "/";
+        this.path = '/';
       }
       this.disconnect = opts.disconnect;
       if (this.disconnect === undefined) {
@@ -105,13 +106,15 @@ class KeepAlive {
       }
       this.wsr = websocketResource;
     } else {
-      throw new TypeError("KeepAlive expected a WebSocketResource");
+      throw new TypeError('KeepAlive expected a WebSocketResource');
     }
   }
+
   stop() {
     clearTimeout(this.keepAliveTimer);
     clearTimeout(this.disconnectTimer);
   }
+
   reset() {
     clearTimeout(this.keepAliveTimer);
     clearTimeout(this.disconnectTimer);
@@ -120,16 +123,16 @@ class KeepAlive {
         // automatically disconnect if server doesn't ack
         this.disconnectTimer = setTimeout(() => {
           clearTimeout(this.keepAliveTimer);
-          this.wsr.close(3001, "No response to keepalive request");
+          this.wsr.close(3001, 'No response to keepalive request');
         }, 10000);
       } else {
         this.reset();
       }
-      debug("Sending a keepalive message");
+      debug('Sending a keepalive message');
       this.wsr.sendRequest({
-        verb: "GET",
+        verb: 'GET',
         path: this.path,
-        success: this.reset.bind(this)
+        success: this.reset.bind(this),
       });
     }, 55000);
   }
@@ -139,8 +142,8 @@ class WebSocketResource extends EventTarget {
   constructor(socket, opts = {}) {
     super();
     let { handleRequest } = opts;
-    if (typeof handleRequest !== "function") {
-      handleRequest = request => request.respond(404, "Not found");
+    if (typeof handleRequest !== 'function') {
+      handleRequest = request => request.respond(404, 'Not found');
     }
     this.sendRequest = options => new OutgoingWebSocketRequest(options, socket);
 
@@ -157,7 +160,7 @@ class WebSocketResource extends EventTarget {
               body: message.request.body,
               headers: message.request.headers,
               id: message.request.id,
-              socket
+              socket,
             })
           );
         } else if (message.type === WebSocketMessage.Type.RESPONSE) {
@@ -170,7 +173,7 @@ class WebSocketResource extends EventTarget {
               callback = request.success;
             }
 
-            if (typeof callback === "function") {
+            if (typeof callback === 'function') {
               callback(response.message, response.status, request);
             }
           } else {
@@ -193,18 +196,18 @@ class WebSocketResource extends EventTarget {
     if (opts.keepalive) {
       this.keepalive = new KeepAlive(this, {
         path: opts.keepalive.path,
-        disconnect: opts.keepalive.disconnect
+        disconnect: opts.keepalive.disconnect,
       });
       const resetKeepAliveTimer = this.keepalive.reset.bind(this.keepalive);
-      socket.addEventListener("open", resetKeepAliveTimer);
-      socket.addEventListener("message", resetKeepAliveTimer);
+      socket.addEventListener('open', resetKeepAliveTimer);
+      socket.addEventListener('message', resetKeepAliveTimer);
       socket.addEventListener(
-        "close",
+        'close',
         this.keepalive.stop.bind(this.keepalive)
       );
     }
 
-    socket.addEventListener("close", () => {
+    socket.addEventListener('close', () => {
       this.closed = true;
     });
 
@@ -213,7 +216,7 @@ class WebSocketResource extends EventTarget {
         return;
       }
 
-      debug("WebSocketResource.close()");
+      debug('WebSocketResource.close()');
       if (this.keepalive) {
         this.keepalive.stop();
       }
@@ -231,8 +234,8 @@ class WebSocketResource extends EventTarget {
         }
         this.closed = true;
 
-        debug("Dispatching our own socket close event");
-        const ev = new Event("close");
+        debug('Dispatching our own socket close event');
+        const ev = new Event('close');
         ev.code = code;
         ev.reason = reason;
         this.dispatchEvent(ev);

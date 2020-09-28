@@ -2,20 +2,21 @@
  * vim: ts=2:sw=2:expandtab
  */
 
-"use strict";
+
 
 /* eslint-disable no-bitwise */
 
-const libsignal = require("@throneless/libsignal-protocol");
-const protobuf = require("./protobufs.js");
+const libsignal = require('@throneless/libsignal-protocol');
+const protobuf = require('./protobufs.js');
+
 const SenderCertificate = protobuf.lookupType(
-  "signalservice.SenderCertificate"
+  'signalservice.SenderCertificate'
 );
 const ServerCertificate = protobuf.lookupType(
-  "signalservice.ServerCertificate"
+  'signalservice.ServerCertificate'
 );
 const UnidentifiedSenderMessage = protobuf.lookupType(
-  "signalservice.UnidentifiedSenderMessage"
+  'signalservice.UnidentifiedSenderMessage'
 );
 const {
   bytesFromString,
@@ -30,8 +31,8 @@ const {
   hmacSha256,
   intsToByteHighAndLow,
   splitBytes,
-  trimBytes
-} = require("./crypto.js");
+  trimBytes,
+} = require('./crypto.js');
 
 const CiphertextMessage = {
   CURRENT_VERSION: 3,
@@ -44,13 +45,13 @@ const CiphertextMessage = {
   SENDERKEY_TYPE: 4,
   SENDERKEY_DISTRIBUTION_TYPE: 5,
 
-  ENCRYPTED_MESSAGE_OVERHEAD: 53
+  ENCRYPTED_MESSAGE_OVERHEAD: 53,
 };
 
 const REVOKED_CERTIFICATES = [];
 
 const CIPHERTEXT_VERSION = 1;
-const UNIDENTIFIED_DELIVERY_PREFIX = "UnidentifiedDelivery";
+const UNIDENTIFIED_DELIVERY_PREFIX = 'UnidentifiedDelivery';
 
 // public CertificateValidator(ECPublicKey trustRoot)
 function createCertificateValidator(trustRoot) {
@@ -79,15 +80,14 @@ function createCertificateValidator(trustRoot) {
       );
 
       if (validationTime > certificate.expires) {
-        throw new Error("Certificate is expired");
+        throw new Error('Certificate is expired');
       }
-    }
+    },
   };
 }
 
 function _decodePoint(serialized, offset = 0) {
-  const view =
-    offset > 0
+  const view =    offset > 0
       ? getViewOfArrayBuffer(serialized, offset, serialized.byteLength)
       : serialized;
 
@@ -99,7 +99,7 @@ function _createServerCertificateFromBuffer(serialized) {
   const wrapper = ServerCertificate.decode(serialized);
 
   if (!wrapper.certificate || !wrapper.signature) {
-    throw new Error("Missing fields");
+    throw new Error('Missing fields');
   }
 
   const certificate = ServerCertificate.Certificate.decode(
@@ -107,7 +107,7 @@ function _createServerCertificateFromBuffer(serialized) {
   );
 
   if (!certificate.id || !certificate.key) {
-    throw new Error("Missing fields");
+    throw new Error('Missing fields');
   }
 
   return {
@@ -116,7 +116,7 @@ function _createServerCertificateFromBuffer(serialized) {
     serialized,
     certificate: wrapper.certificate.toArrayBuffer(),
 
-    signature: wrapper.signature.toArrayBuffer()
+    signature: wrapper.signature.toArrayBuffer(),
   };
 }
 
@@ -125,7 +125,7 @@ function _createSenderCertificateFromBuffer(serialized) {
   const wrapper = SenderCertificate.decode(serialized);
 
   if (!wrapper.signature || !wrapper.certificate) {
-    throw new Error("Missing fields");
+    throw new Error('Missing fields');
   }
 
   const certificate = SenderCertificate.Certificate.decode(
@@ -133,13 +133,13 @@ function _createSenderCertificateFromBuffer(serialized) {
   );
 
   if (
-    !certificate.signer ||
-    !certificate.identityKey ||
-    !certificate.senderDevice ||
-    !certificate.expires ||
-    !certificate.sender
+    !certificate.signer
+    || !certificate.identityKey
+    || !certificate.senderDevice
+    || !certificate.expires
+    || !certificate.sender
   ) {
-    throw new Error("Missing fields");
+    throw new Error('Missing fields');
   }
 
   return {
@@ -154,7 +154,7 @@ function _createSenderCertificateFromBuffer(serialized) {
     certificate: wrapper.certificate.toArrayBuffer(),
     signature: wrapper.signature.toArrayBuffer(),
 
-    serialized
+    serialized,
   };
 }
 
@@ -170,11 +170,11 @@ function _createUnidentifiedSenderMessageFromBuffer(serialized) {
   const unidentifiedSenderMessage = UnidentifiedSenderMessage.decode(view);
 
   if (
-    !unidentifiedSenderMessage.ephemeralPublic ||
-    !unidentifiedSenderMessage.encryptedStatic ||
-    !unidentifiedSenderMessage.encryptedMessage
+    !unidentifiedSenderMessage.ephemeralPublic
+    || !unidentifiedSenderMessage.encryptedStatic
+    || !unidentifiedSenderMessage.encryptedMessage
   ) {
-    throw new Error("Missing fields");
+    throw new Error('Missing fields');
   }
 
   return {
@@ -184,7 +184,7 @@ function _createUnidentifiedSenderMessageFromBuffer(serialized) {
     encryptedStatic: unidentifiedSenderMessage.encryptedStatic.toArrayBuffer(),
     encryptedMessage: unidentifiedSenderMessage.encryptedMessage.toArrayBuffer(),
 
-    serialized
+    serialized,
   };
 }
 
@@ -196,7 +196,7 @@ function _createUnidentifiedSenderMessage(
   encryptedMessage
 ) {
   const versionBytes = new Uint8Array([
-    intsToByteHighAndLow(CIPHERTEXT_VERSION, CIPHERTEXT_VERSION)
+    intsToByteHighAndLow(CIPHERTEXT_VERSION, CIPHERTEXT_VERSION),
   ]);
   const unidentifiedSenderMessage = UnidentifiedSenderMessage.create();
 
@@ -213,7 +213,7 @@ function _createUnidentifiedSenderMessage(
     encryptedStatic,
     encryptedMessage,
 
-    serialized: concatenateBytes(versionBytes, messageBytes)
+    serialized: concatenateBytes(versionBytes, messageBytes),
   };
 }
 
@@ -224,7 +224,7 @@ function _createUnidentifiedSenderMessageContentFromBuffer(serialized) {
   const message = UnidentifiedSenderMessage.Message.decode(serialized);
 
   if (!message.type || !message.senderCertificate || !message.content) {
-    throw new Error("Missing fields");
+    throw new Error('Missing fields');
   }
 
   let type;
@@ -246,7 +246,7 @@ function _createUnidentifiedSenderMessageContentFromBuffer(serialized) {
     ),
     content: message.content.toArrayBuffer(),
 
-    serialized
+    serialized,
   };
 }
 
@@ -283,7 +283,7 @@ function _createUnidentifiedSenderMessageContent(
     senderCertificate,
     content,
 
-    serialized: innerMessage.encode().toArrayBuffer()
+    serialized: innerMessage.encode().toArrayBuffer(),
   };
 }
 
@@ -296,7 +296,8 @@ class SecretSessionCipher {
   constructor(storage) {
     this.storage = storage;
 
-    // We do this on construction because libsignal won't be available when this file loads
+    // We do this on construction because libsignal won't be available when this 
+    // file loads
     const { SessionCipher } = libsignal;
     this.SessionCipher = SessionCipher;
   }
@@ -429,7 +430,7 @@ class SecretSessionCipher {
     const { number, deviceId } = me || {};
     if (sender === number && senderDevice === deviceId) {
       return {
-        isMe: true
+        isMe: true,
       };
     }
     const address = new libsignal.SignalProtocolAddress(sender, senderDevice);
@@ -437,12 +438,12 @@ class SecretSessionCipher {
     try {
       return {
         sender: address,
-        content: await _decryptWithUnidentifiedSenderMessage(content)
+        content: await _decryptWithUnidentifiedSenderMessage(content),
       };
     } catch (error) {
       if (!error) {
         // eslint-disable-next-line no-ex-assign
-        error = new Error("Decryption error was falsey!");
+        error = new Error('Decryption error was falsey!');
       }
 
       error.sender = address;
@@ -498,7 +499,7 @@ class SecretSessionCipher {
     return {
       chainKey: ephemeralDerivedParts[0],
       cipherKey: ephemeralDerivedParts[1],
-      macKey: ephemeralDerivedParts[2]
+      macKey: ephemeralDerivedParts[2],
     };
   }
 
@@ -518,7 +519,7 @@ class SecretSessionCipher {
     // private StaticKeys(byte[] cipherKey, byte[] macKey)
     return {
       cipherKey: staticDerivedParts[1],
-      macKey: staticDerivedParts[2]
+      macKey: staticDerivedParts[2],
     };
   }
 
@@ -571,7 +572,7 @@ class SecretSessionCipher {
   //   SecretKeySpec cipherKey, SecretKeySpec macKey, byte[] ciphertext)
   async _decryptWithSecretKeys(cipherKey, macKey, ciphertext) {
     if (ciphertext.byteLength < 10) {
-      throw new Error("Ciphertext not long enough for MAC!");
+      throw new Error('Ciphertext not long enough for MAC!');
     }
 
     const ciphertextParts = splitBytes(
@@ -589,7 +590,7 @@ class SecretSessionCipher {
     const theirMac = ciphertextParts[1];
 
     if (!constantTimeEqual(ourMac, theirMac)) {
-      throw new Error("Bad mac!");
+      throw new Error('Bad mac!');
     }
 
     // Cipher const cipher = Cipher.getInstance('AES/CTR/NoPadding');
@@ -604,5 +605,5 @@ module.exports = {
   SecretSessionCipher,
   createCertificateValidator,
   _createServerCertificateFromBuffer,
-  _createSenderCertificateFromBuffer
+  _createSenderCertificateFromBuffer,
 };

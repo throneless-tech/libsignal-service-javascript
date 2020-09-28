@@ -2,35 +2,36 @@
  * vim: ts=2:sw=2:expandtab
  */
 
-"use strict";
 
-const debug = require("debug")("libsignal-service:protobuf");
-const ByteBuffer = require("bytebuffer");
-const protobufjs = require("protobufjs");
-const path = require("path");
-const helpers = require("./helpers.js");
+
+const debug = require('debug')('libsignal-service:protobuf');
+const ByteBuffer = require('bytebuffer');
+const protobufjs = require('protobufjs');
+const path = require('path');
+const helpers = require('./helpers.js');
 
 const protobuf = protobufjs.loadSync([
-  path.join(__dirname, "..", "protos", "SubProtocol.proto"),
-  path.join(__dirname, "..", "protos", "DeviceMessages.proto"),
-  path.join(__dirname, "..", "protos", "SignalService.proto"),
-  path.join(__dirname, "..", "protos", "Stickers.proto"),
-  path.join(__dirname, "..", "protos", "DeviceName.proto"),
-  path.join(__dirname, "..", "protos", "UnidentifiedDelivery.proto")
+  path.join(__dirname, '..', 'protos', 'SubProtocol.proto'),
+  path.join(__dirname, '..', 'protos', 'DeviceMessages.proto'),
+  path.join(__dirname, '..', 'protos', 'SignalService.proto'),
+  path.join(__dirname, '..', 'protos', 'Stickers.proto'),
+  path.join(__dirname, '..', 'protos', 'DeviceName.proto'),
+  path.join(__dirname, '..', 'protos', 'UnidentifiedDelivery.proto'),
 ]).root;
 
 // Add contacts_parser.js extended types
-const ContactDetails = protobuf.lookupType("signalservice.ContactDetails");
-const GroupDetails = protobuf.lookupType("signalservice.GroupDetails");
+const ContactDetails = protobuf.lookupType('signalservice.ContactDetails');
+const GroupDetails = protobuf.lookupType('signalservice.GroupDetails');
 
 class ProtoParser {
-  constructor(arrayBuffer, protobuf) {
-    this.protobuf = protobuf;
+  constructor(arrayBuffer, proto) {
+    this.protobuf = proto;
     this.buffer = new ByteBuffer();
     this.buffer.append(arrayBuffer);
     this.buffer.offset = 0;
     this.buffer.limit = arrayBuffer.byteLength;
   }
+
   next() {
     try {
       if (this.buffer.limit === this.buffer.offset) {
@@ -54,15 +55,15 @@ class ProtoParser {
         this.buffer.skip(attachmentLen);
       }
 
-      //if (proto.profileKey) {
-      //proto.profileKey = proto.profileKey.toArrayBuffer();
-      //}
+      // if (proto.profileKey) {
+      // proto.profileKey = proto.profileKey.toArrayBuffer();
+      // }
 
       if (proto.uuid) {
         helpers.normalizeUuids(
           proto,
-          ["uuid"],
-          "ProtoParser::next (proto.uuid)"
+          ['uuid'],
+          'ProtoParser::next (proto.uuid)'
         );
       }
 
@@ -70,14 +71,14 @@ class ProtoParser {
         helpers.normalizeUuids(
           proto,
           proto.members.map((_member, i) => `members.${i}.uuid`),
-          "ProtoParser::next (proto.members)"
+          'ProtoParser::next (proto.members)'
         );
       }
 
       return proto;
     } catch (error) {
       debug(
-        "ProtoParser.next error:",
+        'ProtoParser.next error:',
         error && error.stack ? error.stack : error
       );
     }

@@ -2,33 +2,33 @@
  * vim: ts=2:sw=2:expandtab
  */
 
-"use strict";
 
-const btoa = require("btoa");
-const PQueue = require("p-queue");
-const debug = require("debug")("libsignal-service:AccountManager");
-const EventTarget = require("./EventTarget.js");
-const Event = require("./Event.js");
-const libsignal = require("@throneless/libsignal-protocol");
-const protobuf = require("./protobufs.js");
+
+const btoa = require('btoa');
+const { default: PQueue } = require('p-queue');
+const debug = require('debug')('libsignal-service:AccountManager');
+const libsignal = require('@throneless/libsignal-protocol');
+const EventTarget = require('./EventTarget.js');
+const Event = require('./Event.js');
+const protobuf = require('./protobufs.js');
+
 const ProvisionEnvelope = protobuf.lookupType(
-  "signalservice.ProvisionEnvelope"
+  'signalservice.ProvisionEnvelope'
 );
-const DeviceName = protobuf.lookupType("signalservice.DeviceName");
-const ProvisioningUuid = protobuf.lookupType("signalservice.ProvisioningUuid");
-const crypto = require("./crypto.js");
-const provisioning = require("./ProvisioningCipher.js");
-const WebSocketResource = require("./WebSocketResource.js");
-const libphonenumber = require("./libphonenumber-util.js");
-const createTaskWithTimeout = require("./taskWithTimeout.js");
-const helpers = require("./helpers.js");
+const DeviceName = protobuf.lookupType('signalservice.DeviceName');
+const ProvisioningUuid = protobuf.lookupType('signalservice.ProvisioningUuid');
+const crypto = require('./crypto.js');
+const WebSocketResource = require('./WebSocketResource.js');
+const libphonenumber = require('./libphonenumber-util.js');
+const createTaskWithTimeout = require('./taskWithTimeout.js');
+const helpers = require('./helpers.js');
 
 const ARCHIVE_AGE = 7 * 24 * 60 * 60 * 1000;
 
 const VerifiedStatus = {
   DEFAULT: 0,
   VERIFIED: 1,
-  UNVERIFIED: 2
+  UNVERIFIED: 2,
 };
 
 class AccountManager extends EventTarget {
@@ -53,10 +53,9 @@ class AccountManager extends EventTarget {
     if (!name) {
       return null;
     }
-    const identityKey =
-      providedIdentityKey || (await this.store.getIdentityKeyPair());
+    const identityKey =      providedIdentityKey || (await this.store.getIdentityKeyPair());
     if (!identityKey) {
-      throw new Error("Identity key was not provided and is not in database!");
+      throw new Error('Identity key was not provided and is not in database!');
     }
     const encrypted = await crypto.encryptDeviceName(name, identityKey.pubKey);
 
@@ -74,11 +73,11 @@ class AccountManager extends EventTarget {
 
     const arrayBuffer = crypto.base64ToArrayBuffer(base64);
     const proto = DeviceName.decode(new Uint8Array(arrayBuffer));
-    //const encrypted = {
+    // const encrypted = {
     //  ephemeralPublic: proto.ephemeralPublic.toArrayBuffer(),
     //  syntheticIv: proto.syntheticIv.toArrayBuffer(),
     //  ciphertext: proto.ciphertext.toArrayBuffer()
-    //};
+    // };
 
     const name = await crypto.decryptDeviceName(proto, identityKey.privKey);
 
@@ -155,37 +154,37 @@ class AccountManager extends EventTarget {
         new Promise((resolve, reject) => {
           const socket = getSocket();
           socket.onclose = event => {
-            debug("provisioning socket closed. Code:", event.code);
+            debug('provisioning socket closed. Code:', event.code);
             if (!gotProvisionEnvelope) {
-              reject(new Error("websocket closed"));
+              reject(new Error('websocket closed'));
             }
           };
           socket.onopen = () => {
-            debug("provisioning socket open");
+            debug('provisioning socket open');
           };
           const wsr = new WebSocketResource(socket, {
-            keepalive: { path: "/v1/keepalive/provisioning" },
+            keepalive: { path: '/v1/keepalive/provisioning' },
             handleRequest(request) {
-              if (request.path === "/v1/address" && request.verb === "PUT") {
+              if (request.path === '/v1/address' && request.verb === 'PUT') {
                 const proto = ProvisioningUuid.decode(request.body);
                 setProvisioningUrl(
                   [
-                    "tsdevice:/?uuid=",
+                    'tsdevice:/?uuid=',
                     proto.uuid,
-                    "&pub_key=",
-                    encodeURIComponent(btoa(helpers.getString(pubKey)))
-                  ].join("")
+                    '&pub_key=',
+                    encodeURIComponent(btoa(helpers.getString(pubKey))),
+                  ].join('')
                 );
-                request.respond(200, "OK");
+                request.respond(200, 'OK');
               } else if (
-                request.path === "/v1/message" &&
-                request.verb === "PUT"
+                request.path === '/v1/message'
+                && request.verb === 'PUT'
               ) {
                 const envelope = ProvisionEnvelope.decode(
                   request.body,
-                  "binary"
+                  'binary'
                 );
-                request.respond(200, "OK");
+                request.respond(200, 'OK');
                 gotProvisionEnvelope = true;
                 wsr.close();
                 resolve(
@@ -194,10 +193,10 @@ class AccountManager extends EventTarget {
                       confirmNumber(provisionMessage.number).then(
                         deviceName => {
                           if (
-                            typeof deviceName !== "string" ||
-                            deviceName.length === 0
+                            typeof deviceName !== 'string'
+                            || deviceName.length === 0
                           ) {
-                            throw new Error("Invalid device name");
+                            throw new Error('Invalid device name');
                           }
                           return createAccount(
                             provisionMessage.number,
@@ -221,9 +220,9 @@ class AccountManager extends EventTarget {
                   )
                 );
               } else {
-                debug("Unknown websocket message", request.path);
+                debug('Unknown websocket message', request.path);
               }
-            }
+            },
           });
         })
     );
@@ -247,8 +246,8 @@ class AccountManager extends EventTarget {
   rotateSignedPreKey() {
     return this.queueTask(() => {
       const signedKeyId = this.store.getSignedKeyId();
-      if (typeof signedKeyId !== "number") {
-        throw new Error("Invalid signedKeyId");
+      if (typeof signedKeyId !== 'number') {
+        throw new Error('Invalid signedKeyId');
       }
 
       const { server, cleanSignedPreKeys } = this;
@@ -261,45 +260,45 @@ class AccountManager extends EventTarget {
           () => {
             // We swallow any error here, because we don't want to get into
             //   a loop of repeated retries.
-            debug("Failed to get identity key. Canceling key rotation.");
+            debug('Failed to get identity key. Canceling key rotation.');
           }
         )
         .then(res => {
           if (!res) {
             return null;
           }
-          debug("Saving new signed prekey", res.keyId);
+          debug('Saving new signed prekey', res.keyId);
           return Promise.all([
             this.store.setSignedKeyId(signedKeyId + 1),
             this.store.storeSignedPreKey(res.keyId, res.keyPair),
             server.setSignedPreKey({
               keyId: res.keyId,
               publicKey: res.keyPair.pubKey,
-              signature: res.signature
-            })
+              signature: res.signature,
+            }),
           ])
             .then(() => {
               const confirmed = true;
-              debug("Confirming new signed prekey", res.keyId);
+              debug('Confirming new signed prekey', res.keyId);
               return Promise.all([
                 this.store.removeSignedKeyRotationRejected(),
-                this.store.storeSignedPreKey(res.keyId, res.keyPair, confirmed)
+                this.store.storeSignedPreKey(res.keyId, res.keyPair, confirmed),
               ]);
             })
             .then(() => cleanSignedPreKeys());
         })
         .catch(e => {
-          debug("rotateSignedPrekey error:", e && e.stack ? e.stack : e);
+          debug('rotateSignedPrekey error:', e && e.stack ? e.stack : e);
 
           if (
-            e instanceof Error &&
-            e.name === "HTTPError" &&
-            e.code >= 400 &&
-            e.code <= 599
+            e instanceof Error
+            && e.name === 'HTTPError'
+            && e.code >= 400
+            && e.code <= 599
           ) {
             const rejections = 1 + this.store.getSignedKeyRotationRejected();
             this.store.setSignedKeyRotationRejected(rejections);
-            debug("Signed key rotation rejected count:", rejections);
+            debug('Signed key rotation rejected count:', rejections);
           } else {
             throw e;
           }
@@ -322,16 +321,16 @@ class AccountManager extends EventTarget {
       const confirmed = allKeys.filter(key => key.confirmed);
       const unconfirmed = allKeys.filter(key => !key.confirmed);
 
-      const recent = allKeys[0] ? allKeys[0].keyId : "none";
-      const recentConfirmed = confirmed[0] ? confirmed[0].keyId : "none";
+      const recent = allKeys[0] ? allKeys[0].keyId : 'none';
+      const recentConfirmed = confirmed[0] ? confirmed[0].keyId : 'none';
       debug(`Most recent signed key: ${recent}`);
       debug(`Most recent confirmed signed key: ${recentConfirmed}`);
       debug(
-        "Total signed key count:",
+        'Total signed key count:',
         allKeys.length,
-        "-",
+        '-',
         confirmed.length,
-        "confirmed"
+        'confirmed'
       );
 
       let confirmedCount = confirmed.length;
@@ -346,9 +345,9 @@ class AccountManager extends EventTarget {
 
         if (age > ARCHIVE_AGE) {
           debug(
-            "Removing confirmed signed prekey:",
+            'Removing confirmed signed prekey:',
             key.keyId,
-            "with timestamp:",
+            'with timestamp:',
             new Date(createdAt).toJSON()
           );
           this.store.removeSignedPreKey(key.keyId);
@@ -369,9 +368,9 @@ class AccountManager extends EventTarget {
         const age = Date.now() - createdAt;
         if (age > ARCHIVE_AGE) {
           debug(
-            "Removing unconfirmed signed prekey:",
+            'Removing unconfirmed signed prekey:',
             key.keyId,
-            "with timestamp:",
+            'with timestamp:',
             new Date(createdAt).toJSON()
           );
           this.store.removeSignedPreKey(key.keyId);
@@ -404,7 +403,7 @@ class AccountManager extends EventTarget {
 
     debug(
       `createAccount: Number is ${number}, password has length: ${
-        password ? password.length : "none"
+        this.password ? this.password.length : 'none'
       }`
     );
 
@@ -418,27 +417,26 @@ class AccountManager extends EventTarget {
     );
 
     const numberChanged = previousNumber && previousNumber !== number;
-    const uuidChanged =
-      previousUuid && response.uuid && previousUuid !== response.uuid;
+    const uuidChanged =      previousUuid && response.uuid && previousUuid !== response.uuid;
 
     if (numberChanged || uuidChanged) {
       if (numberChanged) {
         debug(
-          "New number is different from old number; deleting all previous data"
+          'New number is different from old number; deleting all previous data'
         );
       }
       if (uuidChanged) {
         debug(
-          "New uuid is different from old uuid; deleting all previous data"
+          'New uuid is different from old uuid; deleting all previous data'
         );
       }
 
       try {
         await this.store.removeAllData();
-        debug("Successfully deleted previous data");
+        debug('Successfully deleted previous data');
       } catch (error) {
         debug(
-          "Something went wrong deleting data from previous number",
+          'Something went wrong deleting data from previous number',
           error && error.stack ? error.stack : error
         );
       }
@@ -471,7 +469,7 @@ class AccountManager extends EventTarget {
       firstUse: true,
       timestamp: Date.now(),
       verified: VerifiedStatus.VERIFIED,
-      nonblockingApproval: true
+      nonblockingApproval: true,
     });
 
     await this.store.setIdentityKeyPair(identityKeyPair);
@@ -490,11 +488,11 @@ class AccountManager extends EventTarget {
   }
 
   async clearSessionsAndPreKeys() {
-    debug("clearing all sessions, prekeys, and signed prekeys");
+    debug('clearing all sessions, prekeys, and signed prekeys');
     await Promise.all([
       this.store.clearPreKeyStore(),
       this.store.clearSignedPreKeysStore(),
-      this.store.clearSessionStore()
+      this.store.clearSessionStore(),
     ]);
   }
 
@@ -503,23 +501,22 @@ class AccountManager extends EventTarget {
     const key = keys.signedPreKey;
     const confirmed = true;
 
-    debug("confirmKeys: confirming key", key.keyId);
+    debug('confirmKeys: confirming key', key.keyId);
     await this.store.storeSignedPreKey(key.keyId, key.keyPair, confirmed);
   }
 
   async generateKeys(count, providedProgressCallback) {
-    const progressCallback =
-      typeof providedProgressCallback === "function"
+    const progressCallback =      typeof providedProgressCallback === 'function'
         ? providedProgressCallback
         : null;
     const startId = await this.store.getMaxPreKeyId();
     const signedKeyId = await this.store.getSignedKeyId();
 
-    if (typeof startId !== "number") {
-      throw new Error("Invalid maxPreKeyId");
+    if (typeof startId !== 'number') {
+      throw new Error('Invalid maxPreKeyId');
     }
-    if (typeof signedKeyId !== "number") {
-      throw new Error("Invalid signedKeyId");
+    if (typeof signedKeyId !== 'number') {
+      throw new Error('Invalid signedKeyId');
     }
 
     return this.store.getIdentityKeyPair().then(identityKey => {
@@ -532,7 +529,7 @@ class AccountManager extends EventTarget {
             this.store.storePreKey(res.keyId, res.keyPair);
             result.preKeys.push({
               keyId: res.keyId,
-              publicKey: res.keyPair.pubKey
+              publicKey: res.keyPair.pubKey,
             });
             if (progressCallback) {
               progressCallback();
@@ -550,7 +547,7 @@ class AccountManager extends EventTarget {
               publicKey: res.keyPair.pubKey,
               signature: res.signature,
               // server.registerKeys doesn't use keyPair, confirmKeys does
-              keyPair: res.keyPair
+              keyPair: res.keyPair,
             };
           }
         )
@@ -565,21 +562,22 @@ class AccountManager extends EventTarget {
     });
   }
 
+  // eslint-disable-next-line no-unused-vars
   async registrationDone({ uuid, number }) {
-    debug("registration done");
+    debug('registration done');
 
     // Ensure that we always have a conversation for ourself
-    //await ConversationController.getOrCreateAndWait(number, "private");
-    //const conversation = await ConversationController.getOrCreateAndWait(
+    // await ConversationController.getOrCreateAndWait(number, "private");
+    // const conversation = await ConversationController.getOrCreateAndWait(
     //  number || uuid,
     //  'private'
-    //);
-    //conversation.updateE164(number);
-    //conversation.updateUuid(uuid);
+    // );
+    // conversation.updateE164(number);
+    // conversation.updateUuid(uuid);
 
-    debug("dispatching registration event");
+    debug('dispatching registration event');
 
-    this.dispatchEvent(new Event("registration"));
+    this.dispatchEvent(new Event('registration'));
   }
 }
 

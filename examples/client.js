@@ -37,13 +37,14 @@
  *
  */
 
-const Signal = require("../src/index.js");
-const Storage = require("./LocalSignalProtocolStore.js");
+const Signal = require('../src/index.js');
+const Storage = require('./LocalSignalProtocolStore.js');
+
 const protocolStore = new Signal.ProtocolStore(new Storage(process.env.STORE));
 protocolStore.load();
-const ByteBuffer = require("bytebuffer");
-const fs = require("fs");
-const path = require("path");
+const ByteBuffer = require('bytebuffer');
+const fs = require('fs');
+const path = require('path');
 
 const args = process.argv.slice(2);
 
@@ -51,19 +52,19 @@ function printError(error) {
   console.log(error);
 }
 
-let accountManager,
-  messageSender,
-  username,
-  password,
-  number,
-  numbers,
-  groupId,
-  text,
-  expire;
+let accountManager;
+  let messageSender;
+  let username;
+  let password;
+  let number;
+  let numbers;
+  let groupId;
+  let text;
+  let expire;
 
 switch (args[0]) {
-  case "request":
-  case "requestSMS":
+  case 'request':
+  case 'requestSMS':
     username = args[1];
     password = args[2];
     accountManager = new Signal.AccountManager(
@@ -75,12 +76,12 @@ switch (args[0]) {
     accountManager
       .requestSMSVerification()
       .then(result => {
-        console.log("Sent verification code.");
-        return;
+        console.log('Sent verification code.');
+        
       })
       .catch(printError);
     break;
-  case "requestVoice":
+  case 'requestVoice':
     username = args[1];
     password = args[2];
     accountManager = new Signal.AccountManager(
@@ -92,12 +93,12 @@ switch (args[0]) {
     accountManager
       .requestVoiceVerification()
       .then(result => {
-        console.log("Calling for verification.");
-        return;
+        console.log('Calling for verification.');
+        
       })
       .catch(printError);
     break;
-  case "register":
+  case 'register':
     username = args[1];
     password = args[2];
     const code = args[3];
@@ -114,7 +115,7 @@ switch (args[0]) {
       })
       .catch(printError);
     break;
-  case "send":
+  case 'send':
     number = args[1];
     text = args[2];
     attachments = [];
@@ -128,9 +129,9 @@ switch (args[0]) {
           .then(() => {
             messageSender
               .sendMessageToNumber({
-                number: number,
+                number,
                 body: text,
-                attachments: attachments
+                attachments,
               })
               .then(result => {
                 console.log(result);
@@ -140,9 +141,9 @@ switch (args[0]) {
       } else {
         messageSender
           .sendMessageToNumber({
-            number: number,
+            number,
             body: text,
-            attachments: attachments
+            attachments,
           })
           .then(result => {
             console.log(result);
@@ -151,9 +152,9 @@ switch (args[0]) {
       }
     });
     break;
-  case "sendToGroup":
+  case 'sendToGroup':
     groupId = args[1];
-    numbers = args[2].split(",");
+    numbers = args[2].split(',');
     text = args[3];
     attachments = [];
     messageSender = new Signal.MessageSender(protocolStore);
@@ -166,10 +167,10 @@ switch (args[0]) {
           .then(() => {
             messageSender
               .sendMessageToGroup({
-                groupId: groupId,
-                groupNumbers: numbers,
+                groupId,
+                recipients: numbers,
                 body: text,
-                attachments: attachments
+                attachments,
               })
               .then(result => {
                 console.log(result);
@@ -179,9 +180,9 @@ switch (args[0]) {
       } else {
         messageSender
           .sendMessageToGroup({
-            groupId: groupId,
-            groupNumbers: numbers,
-            body: text
+            groupId,
+            recipients: numbers,
+            body: text,
           })
           .then(result => {
             console.log(result);
@@ -190,7 +191,7 @@ switch (args[0]) {
       }
     });
     break;
-  case "expire":
+  case 'expire':
     number = args[1];
     expire = args[2];
     messageSender = new Signal.MessageSender(protocolStore);
@@ -203,45 +204,46 @@ switch (args[0]) {
         .catch(printError);
     });
     break;
-  case "createGroup":
+  case 'createGroup':
     name = args[1];
     numbers = args[2];
     messageSender = new Signal.MessageSender(protocolStore);
     messageSender.connect().then(() => {
       groupId = Signal.KeyHelper.generateGroupId();
       messageSender
-        .createGroup(numbers.split(","), groupId, name)
+        .createGroup(numbers.split(','), groupId, name)
         .then(result => {
-          console.log("Created group with ID: ", groupId);
+          console.log('Created group with ID: ', groupId);
         })
         .catch(printError);
     });
     break;
-  case "leaveGroup":
+  case 'leaveGroup':
     groupId = args[1];
-    numbers = args[2].split(",");
+    numbers = args[2].split(',');
     messageSender = new Signal.MessageSender(protocolStore);
     messageSender.connect().then(() => {
       messageSender
         .leaveGroup(groupId, numbers)
         .then(result => {
           console.log(result);
-          console.log("Left group with ID: ", groupId);
+          console.log('Left group with ID: ', groupId);
         })
         .catch(printError);
     });
     break;
-  case "receive":
+  case 'receive':
     const messageReceiver = new Signal.MessageReceiver(protocolStore);
     messageReceiver.connect().then(() => {
-      messageReceiver.addEventListener("message", ev => {
+      messageReceiver.addEventListener('message', ev => {
+        console.log('*** EVENT ***:', ev);
         ev.data.message.attachments.map(attachment => {
           messageReceiver
             .handleAttachment(attachment)
             .then(attachmentPointer => {
-              Signal.AttachmentHelper.saveFile(attachmentPointer, "./").then(
+              Signal.AttachmentHelper.saveFile(attachmentPointer, './').then(
                 fileName => {
-                  console.log("Wrote file to: ", fileName);
+                  console.log('Wrote file to: ', fileName);
                 }
               );
             });
@@ -249,71 +251,71 @@ switch (args[0]) {
         if (ev.data.message.group) {
           console.log(ev.data.message.group);
           console.log(
-            "Received message in group " +
-              ev.data.message.group.id +
-              ": " +
-              ev.data.message.body
+            `Received message in group ${ 
+              ev.data.message.group.id
+               }: ${
+               ev.data.message.body}`
           );
         } else {
-          console.log("Received message: ", ev.data.message.body);
+          console.log('Received message: ', ev.data.message.body);
         }
         ev.confirm();
       });
-      messageReceiver.addEventListener("configuration", ev => {
-        console.log("Received configuration sync: ", ev.configuration);
+      messageReceiver.addEventListener('configuration', ev => {
+        console.log('Received configuration sync: ', ev.configuration);
         ev.confirm();
       });
-      messageReceiver.addEventListener("group", ev => {
-        console.log("Received group details: ", ev.groupDetails);
+      messageReceiver.addEventListener('group', ev => {
+        console.log('Received group details: ', ev.groupDetails);
         ev.confirm();
       });
-      messageReceiver.addEventListener("contact", ev => {
+      messageReceiver.addEventListener('contact', ev => {
         console.log(
-          "Received contact for " +
-            ev.contactDetails.number +
-            " who has name " +
-            ev.contactDetails.name
+          `Received contact for ${ 
+            ev.contactDetails.number
+             } who has name ${
+             ev.contactDetails.name}`
         );
         ev.confirm();
       });
-      messageReceiver.addEventListener("verified", ev => {
-        console.log("Received verification: ", ev.verified);
+      messageReceiver.addEventListener('verified', ev => {
+        console.log('Received verification: ', ev.verified);
         ev.confirm();
       });
-      messageReceiver.addEventListener("sent", ev => {
+      messageReceiver.addEventListener('sent', ev => {
         console.log(
-          "Message successfully sent from device " +
-            ev.data.deviceId +
-            " to " +
-            ev.data.destination +
-            " at timestamp " +
-            ev.data.timestamp
+          `Message successfully sent from device ${ 
+            ev.data.deviceId
+             } to ${
+             ev.data.destination
+             } at timestamp ${
+             ev.data.timestamp}`
         );
         ev.confirm();
       });
-      messageReceiver.addEventListener("delivery", ev => {
+      messageReceiver.addEventListener('delivery', ev => {
         console.log(
-          "Message successfully delivered to number " +
-            ev.deliveryReceipt.source +
-            " and device " +
-            ev.deliveryReceipt.sourceDevice +
-            " at timestamp " +
-            ev.deliveryReceipt.timestamp
+          `Message successfully delivered to number ${ 
+            ev.deliveryReceipt.source
+             } and device ${
+             ev.deliveryReceipt.sourceDevice
+             } at timestamp ${
+             ev.deliveryReceipt.timestamp}`
         );
         ev.confirm();
       });
-      messageReceiver.addEventListener("read", ev => {
+      messageReceiver.addEventListener('read', ev => {
         console.log(
-          "Message read on " +
-            ev.read.reader +
-            " at timestamp " +
-            ev.read.timestamp
+          `Message read on ${ 
+            ev.read.reader
+             } at timestamp ${
+             ev.read.timestamp}`
         );
         ev.confirm();
       });
     });
     break;
   default:
-    console.log("No valid command specified.");
+    console.log('No valid command specified.');
     break;
 }

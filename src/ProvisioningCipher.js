@@ -2,24 +2,22 @@
  * vim: ts=2:sw=2:expandtab
  */
 
-"use strict";
 
-const libsignal = require("@throneless/libsignal-protocol");
-const ProvisionMessage = require("./protobufs.js").lookupType(
-  "signalservice.ProvisionMessage"
+
+const libsignal = require('@throneless/libsignal-protocol');
+const ProvisionMessage = require('./protobufs.js').lookupType(
+  'signalservice.ProvisionMessage'
 );
 
 /* eslint-disable more/no-then */
 
 // eslint-disable-next-line func-names
 class ProvisioningCipher {
-  constructor() {}
-
   decrypt(provisionEnvelope) {
     const masterEphemeral = provisionEnvelope.publicKey.toArrayBuffer();
     const message = provisionEnvelope.body.toArrayBuffer();
     if (new Uint8Array(message)[0] !== 1) {
-      throw new Error("Bad version number on ProvisioningMessage");
+      throw new Error('Bad version number on ProvisioningMessage');
     }
 
     const iv = message.slice(1, 16 + 1);
@@ -33,7 +31,7 @@ class ProvisioningCipher {
         libsignal.HKDF.deriveSecrets(
           ecRes,
           new ArrayBuffer(32),
-          "TextSecure Provisioning Message"
+          'TextSecure Provisioning Message'
         )
       )
       .then(keys =>
@@ -51,7 +49,7 @@ class ProvisioningCipher {
             number: provisionMessage.number,
             provisioningCode: provisionMessage.provisioningCode,
             userAgent: provisionMessage.userAgent,
-            readReceipts: provisionMessage.readReceipts
+            readReceipts: provisionMessage.readReceipts,
           };
           if (provisionMessage.profileKey) {
             ret.profileKey = provisionMessage.profileKey.toArrayBuffer();
@@ -60,6 +58,7 @@ class ProvisioningCipher {
         });
       });
   }
+
   getPublicKey() {
     return Promise.resolve()
       .then(() => {

@@ -2,44 +2,47 @@
  * vim: ts=2:sw=2:expandtab
  */
 
-"use strict";
 
-const debug = require("debug")("libsignal-service:SendMessage");
-const libsignal = require("@throneless/libsignal-protocol");
-const PQueue = require("p-queue");
-const crypto = require("./crypto.js");
-const errors = require("./errors.js");
-const helpers = require("./helpers.js");
-const OutgoingMessage = require("./OutgoingMessage.js");
-const createTaskWithTimeout = require("./taskWithTimeout.js");
-const Message = require("./Message.js");
-const protobuf = require("./protobufs.js");
+
+const debug = require('debug')('libsignal-service:SendMessage');
+const _ = require('lodash');
+const libsignal = require('@throneless/libsignal-protocol');
+const { default: PQueue } = require('p-queue');
+const crypto = require('./crypto.js');
+const errors = require('./errors.js');
+const helpers = require('./helpers.js');
+const OutgoingMessage = require('./OutgoingMessage.js');
+const createTaskWithTimeout = require('./taskWithTimeout.js');
+const Message = require('./Message.js');
+const protobuf = require('./protobufs.js');
+
 const AttachmentPointer = protobuf.lookupType(
-  "signalservice.AttachmentPointer"
+  'signalservice.AttachmentPointer'
 );
-const Content = protobuf.lookupType("signalservice.Content");
-const DataMessage = protobuf.lookupType("signalservice.DataMessage");
-const GroupContext = protobuf.lookupType("signalservice.GroupContext");
-const NullMessage = protobuf.lookupType("signalservice.NullMessage");
-const ReceiptMessage = protobuf.lookupType("signalservice.ReceiptMessage");
-const SyncMessage = protobuf.lookupType("signalservice.SyncMessage");
-const SyncMessageRead = protobuf.lookupType("signalservice.SyncMessage.Read");
+const Content = protobuf.lookupType('signalservice.Content');
+const DataMessage = protobuf.lookupType('signalservice.DataMessage');
+const GroupContext = protobuf.lookupType('signalservice.GroupContext');
+const NullMessage = protobuf.lookupType('signalservice.NullMessage');
+const ReceiptMessage = protobuf.lookupType('signalservice.ReceiptMessage');
+const SyncMessage = protobuf.lookupType('signalservice.SyncMessage');
+const SyncMessageRead = protobuf.lookupType('signalservice.SyncMessage.Read');
 const SyncMessageRequest = protobuf.lookupType(
-  "signalservice.SyncMessage.Request"
+  'signalservice.SyncMessage.Request'
 );
-const SyncMessageSent = protobuf.lookupType("signalservice.SyncMessage.Sent");
+const SyncMessageSent = protobuf.lookupType('signalservice.SyncMessage.Sent');
 const SyncMessageStickerPackOperation = protobuf.lookupType(
-  "signalservice.SyncMessage.StickerPackOperation"
+  'signalservice.SyncMessage.StickerPackOperation'
 );
-const TypingMessage = protobuf.lookupType("signalservice.TypingMessage");
-const Verified = protobuf.lookupType("signalservice.Verified");
+const SyncMessageViewOnceOpen = protobuf.lookupType(
+  'signalservice.SyncMessage.ViewOnceOpen'
+);
+const TypingMessage = protobuf.lookupType('signalservice.TypingMessage');
+const Verified = protobuf.lookupType('signalservice.Verified');
 /* eslint-disable more/no-then, no-bitwise */
 
-const PAD_ALL_ATTACHMENTS = false;
-
 function stringToArrayBuffer(str) {
-  if (typeof str !== "string") {
-    throw new Error("Passed non-string to stringToArrayBuffer");
+  if (typeof str !== 'string') {
+    throw new Error('Passed non-string to stringToArrayBuffer');
   }
   const res = new ArrayBuffer(str.length);
   const uint = new Uint8Array(res);
@@ -79,7 +82,7 @@ class MessageSender {
   }
 
   async makeAttachmentPointer(attachment) {
-    if (typeof attachment !== "object" || attachment == null) {
+    if (typeof attachment !== 'object' || attachment == null) {
       return Promise.resolve(undefined);
     }
 
@@ -147,12 +150,12 @@ class MessageSender {
     // It's most likely that dataMessage will be populated, so we look at it in detail
     const data = content.dataMessage;
     if (
-      data &&
-      !data.attachments.length &&
-      !data.body &&
-      !data.expireTimer &&
-      !data.flags &&
-      !data.group
+      data
+      && !data.attachments.length
+      && !data.body
+      && !data.expireTimer
+      && !data.flags
+      && !data.group
     ) {
       return false;
     }
@@ -194,13 +197,12 @@ class MessageSender {
   }
 
   queueJobForIdentifier(identifier, runJob) {
-    //const { id } = await ConversationController.getOrCreateAndWait(
+    // const { id } = await ConversationController.getOrCreateAndWait(
     //  identifier,
     //  'private'
-    //);
+    // );
     const id = identifier;
-    this.pendingMessages[id] =
-      this.pendingMessages[id] || new PQueue({ concurrency: 1 });
+    this.pendingMessages[id] =      this.pendingMessages[id] || new PQueue({ concurrency: 1 });
 
     const queue = this.pendingMessages[id];
 
@@ -213,7 +215,7 @@ class MessageSender {
   }
 
   uploadAttachments(message) {
-    debug("Message attachments: ", message.attachments);
+    debug('Message attachments: ', message.attachments);
     return Promise.all(
       message.attachments.map(this.makeAttachmentPointer.bind(this))
     )
@@ -222,7 +224,7 @@ class MessageSender {
         message.attachmentPointers = attachmentPointers;
       })
       .catch(error => {
-        if (error instanceof Error && error.name === "HTTPError") {
+        if (error instanceof Error && error.name === 'HTTPError') {
           throw new errors.MessageError(message, error);
         } else {
           throw error;
@@ -235,13 +237,13 @@ class MessageSender {
       const preview = await Promise.all(
         (message.preview || []).map(async item => ({
           ...item,
-          image: await this.makeAttachmentPointer(item.image)
+          image: await this.makeAttachmentPointer(item.image),
         }))
       );
       // eslint-disable-next-line no-param-reassign
       message.preview = preview;
     } catch (error) {
-      if (error instanceof Error && error.name === "HTTPError") {
+      if (error instanceof Error && error.name === 'HTTPError') {
         throw new errors.MessageError(message, error);
       } else {
         throw error;
@@ -260,10 +262,10 @@ class MessageSender {
       // eslint-disable-next-line no-param-reassign
       message.sticker = {
         ...sticker,
-        attachmentPointer: await this.makeAttachmentPointer(sticker.data)
+        attachmentPointer: await this.makeAttachmentPointer(sticker.data),
       };
     } catch (error) {
-      if (error instanceof Error && error.name === "HTTPError") {
+      if (error instanceof Error && error.name === 'HTTPError') {
         throw new errors.MessageError(message, error);
       } else {
         throw error;
@@ -292,7 +294,7 @@ class MessageSender {
         });
       })
     ).catch(error => {
-      if (error instanceof Error && error.name === "HTTPError") {
+      if (error instanceof Error && error.name === 'HTTPError') {
         throw new errors.MessageError(message, error);
       } else {
         throw error;
@@ -302,8 +304,10 @@ class MessageSender {
 
   async sendMessage(attrs, options) {
     if (!attrs.timestamp) {
+      // eslint-disable-next-line no-param-reassign
       attrs.timestamp = Date.now();
     }
+    // eslint-disable-next-line no-param-reassign
     attrs.profileKey = await this.store.getProfileKey();
     const message = new Message(attrs);
     const silent = false;
@@ -312,7 +316,7 @@ class MessageSender {
       this.uploadAttachments(message),
       this.uploadThumbnails(message),
       this.uploadLinkPreviews(message),
-      this.uploadSticker(message)
+      this.uploadSticker(message),
     ]).then(
       () =>
         new Promise((resolve, reject) => {
@@ -343,7 +347,6 @@ class MessageSender {
     silent,
     options = {}
   ) {
-    debug("message to send: ", message);
     const rejections = await this.store.getSignedKeyRotationRejected();
     if (rejections > 5) {
       throw new errors.SignedPreKeyRotationError(
@@ -413,7 +416,7 @@ class MessageSender {
         proto,
         callback,
         silent,
-        (options = {})
+        options
       );
     });
   }
@@ -445,7 +448,7 @@ class MessageSender {
     const myNumber = await this.store.getNumber();
     const myUuid = await this.store.getUuid();
     const myDevice = await this.store.getDeviceId();
-    if (myDevice === 1 || myDevice === "1") {
+    if (myDevice === 1 || myDevice === '1') {
       return Promise.resolve();
     }
 
@@ -481,13 +484,13 @@ class MessageSender {
     if (sentTo && sentTo.length) {
       sentMessage.unidentifiedStatus = sentTo.map(identifier => {
         const status = SyncMessageSent.UnidentifiedDeliveryStatus.create();
-        //const conv = ConversationController.get(identifier);
-        //if (conv && conv.get("e164")) {
+        // const conv = ConversationController.get(identifier);
+        // if (conv && conv.get("e164")) {
         //  status.destination = conv.get("e164");
-        //}
-        //if (conv && conv.get("uuid")) {
+        // }
+        // if (conv && conv.get("uuid")) {
         //  status.destinationUuid = conv.get("uuid");
-        //}
+        // }
 
         status.destination = identifier;
         status.unidentified = Boolean(unidentifiedLookup[identifier]);
@@ -517,12 +520,15 @@ class MessageSender {
 
     return this.server.getProfile(number);
   }
+
   getAvatar(path) {
     return this.server.getAvatar(path);
   }
+
   getSticker(packId, stickerId) {
     return this.server.getSticker(packId, stickerId);
   }
+
   getStickerPackManifest(packId) {
     return this.server.getStickerPackManifest(packId);
   }
@@ -531,7 +537,7 @@ class MessageSender {
     const myNumber = await this.store.getNumber();
     const myUuid = await this.store.getUuid();
     const myDevice = await this.store.getDeviceId();
-    if (myDevice !== 1 && myDevice !== "1") {
+    if (myDevice !== 1 && myDevice !== '1') {
       const request = SyncMessageRequest.create();
       request.type = SyncMessageRequest.Type.BLOCKED;
       const syncMessage = this.createSyncMessage();
@@ -556,7 +562,7 @@ class MessageSender {
     const myNumber = await this.store.getNumber();
     const myUuid = await this.store.getUuid();
     const myDevice = await this.store.getDeviceId();
-    if (myDevice !== 1 && myDevice !== "1") {
+    if (myDevice !== 1 && myDevice !== '1') {
       const request = SyncMessageRequest.create();
       request.type = SyncMessageRequest.Type.CONFIGURATION;
       const syncMessage = this.createSyncMessage();
@@ -576,11 +582,12 @@ class MessageSender {
 
     return Promise.resolve();
   }
+
   async sendRequestGroupSyncMessage(options) {
     const myNumber = await this.store.getNumber();
     const myUuid = await this.store.getUuid();
     const myDevice = await this.store.getDeviceId();
-    if (myDevice !== 1 && myDevice !== "1") {
+    if (myDevice !== 1 && myDevice !== '1') {
       const request = SyncMessageRequest.create();
       request.type = SyncMessageRequest.Type.GROUPS;
       const syncMessage = this.createSyncMessage();
@@ -605,7 +612,7 @@ class MessageSender {
     const myNumber = await this.store.getNumber();
     const myUuid = await this.store.getUuid();
     const myDevice = await this.store.getDeviceId();
-    if (myDevice !== 1 && myDevice !== "1") {
+    if (myDevice !== 1 && myDevice !== '1') {
       const request = SyncMessageRequest.create();
       request.type = SyncMessageRequest.Type.CONTACTS;
       const syncMessage = this.createSyncMessage();
@@ -628,7 +635,8 @@ class MessageSender {
 
   async sendTypingMessage(options = {}, sendOptions = {}) {
     const ACTION_ENUM = TypingMessage.Action;
-    const { recipientId, groupId, groupNumbers, isTyping, timestamp } = options;
+    let { groupNumbers } = options;
+    const { recipientId, groupId, isTyping, timestamp } = options;
 
     // We don't want to send typing messages to our other devices, but we will
     //   in the group case.
@@ -639,7 +647,7 @@ class MessageSender {
     }
 
     if (!recipientId && !groupId) {
-      throw new Error("Need to provide either recipientId or groupId!");
+      throw new Error('Need to provide either recipientId or groupId!');
     }
 
     // If we have group support, retrieve from store
@@ -675,7 +683,7 @@ class MessageSender {
       silent,
       {
         ...sendOptions,
-        online
+        online,
       }
     );
   }
@@ -685,9 +693,9 @@ class MessageSender {
     const myDevice = await this.store.getDeviceId();
     const myUuid = await this.store.getUuid();
     if (
-      myNumber === recipientE164 &&
-      myUuid === recipientUuid &&
-      (myDevice === 1 || myDevice === "1")
+      myNumber === recipientE164
+      && myUuid === recipientUuid
+      && (myDevice === 1 || myDevice === '1')
     ) {
       return Promise.resolve();
     }
@@ -726,11 +734,12 @@ class MessageSender {
       options
     );
   }
+
   async syncReadMessages(reads, options) {
     const myNumber = await this.store.getNumber();
     const myUuid = await this.store.getUuid();
     const myDevice = await this.store.getDeviceId();
-    if (myDevice !== 1 && myDevice !== "1") {
+    if (myDevice !== 1 && myDevice !== '1') {
       const syncMessage = this.createSyncMessage();
       syncMessage.read = [];
       for (let i = 0; i < reads.length; i += 1) {
@@ -754,11 +763,12 @@ class MessageSender {
 
     return Promise.resolve();
   }
+
   async syncViewOnceOpen(sender, senderUuid, timestamp, options) {
     const myNumber = await this.store.getNumber();
     const myUuid = await this.store.getUuid();
     const myDevice = await this.store.getDeviceId();
-    if (myDevice === 1 || myDevice === "1") {
+    if (myDevice === 1 || myDevice === '1') {
       return null;
     }
 
@@ -785,7 +795,7 @@ class MessageSender {
 
   async sendStickerPackSync(operations, options) {
     const myDevice = await this.store.getDeviceId();
-    if (myDevice === 1 || myDevice === "1") {
+    if (myDevice === 1 || myDevice === '1') {
       return null;
     }
 
@@ -797,8 +807,8 @@ class MessageSender {
       const { packId, packKey, installed } = item;
 
       const operation = SyncMessageStickerPackOperation.create();
-      operation.packId = hexStringToArrayBuffer(packId);
-      operation.packKey = base64ToArrayBuffer(packKey);
+      operation.packId = helpers.hexStringToArrayBuffer(packId);
+      operation.packKey = helpers.base64ToArrayBuffer(packKey);
       operation.type = installed ? ENUM.INSTALL : ENUM.REMOVE;
 
       return operation;
@@ -819,6 +829,7 @@ class MessageSender {
       options
     );
   }
+
   async syncVerification(
     destinationE164,
     destinationUuid,
@@ -831,7 +842,7 @@ class MessageSender {
     const myDevice = await this.store.getDeviceId();
     const now = Date.now();
 
-    if (myDevice === 1 || myDevice === "1") {
+    if (myDevice === 1 || myDevice === '1') {
       return Promise.resolve();
     }
 
@@ -906,7 +917,7 @@ class MessageSender {
         unidentifiedDeliveries: [],
         dataMessage: helpers.convertToArrayBuffer(
           DataMessage.encode(proto).finish()
-        )
+        ),
       });
     }
 
@@ -957,23 +968,25 @@ class MessageSender {
       sticker,
       reaction,
       expireTimer,
-      flags
+      flags,
     };
 
     return this.getMessageProtoObj(attributes);
   }
 
-  async getMessageProtoObj(attributes) {
+  async getMessageProtoObj(attrs) {
     if (!attrs.timestamp) {
+      // eslint-disable-next-line no-param-reassign
       attrs.timestamp = Date.now();
     }
+    // eslint-disable-next-line no-param-reassign
     attrs.profileKey = await this.store.getProfileKey();
-    const message = new Message(attributes);
+    const message = new Message(attrs);
     await Promise.all([
       this.uploadAttachments(message),
       this.uploadThumbnails(message),
       this.uploadLinkPreviews(message),
-      this.uploadSticker(message)
+      this.uploadSticker(message),
     ]);
 
     return message.toArrayBuffer();
@@ -982,38 +995,69 @@ class MessageSender {
   async sendMessageToIdentifier(
     {
       identifier,
-      body = "",
+      body = '',
       attachments = [],
       quote,
       preview,
       sticker,
       reaction,
       timestamp,
-      expireTimer
+      expireTimer,
     },
     options = {}
   ) {
     return this.sendMessage(
       {
         recipients: [identifier],
-        body: body,
+        body,
         timestamp,
         attachments,
         quote,
         preview,
         sticker,
         reaction,
-        expireTimer
+        expireTimer,
+      },
+      options
+    );
+  }
+
+  // backwards compatibility
+  async sendMessageToNumber(
+    {
+      number,
+      body = '',
+      attachments = [],
+      quote,
+      preview,
+      sticker,
+      reaction,
+      timestamp,
+      expireTimer,
+    },
+    options = {}
+  ) {
+    return this.sendMessage(
+      {
+        recipients: [number],
+        body,
+        timestamp,
+        attachments,
+        quote,
+        preview,
+        sticker,
+        reaction,
+        expireTimer,
       },
       options
     );
   }
 
   async resetSession(identifier, timestamp, options) {
-    debug("resetting secure session");
+    debug('resetting secure session');
     const silent = false;
     const proto = DataMessage.create();
-    proto.body = "TERMINATE";
+    proto.body = 'TERMINATE';
     proto.flags = DataMessage.Flags.END_SESSION;
 
     const logError = prefix => error => {
@@ -1028,7 +1072,7 @@ class MessageSender {
               targetNumber,
               deviceId
             );
-            debug("deleting sessions for", address.toString());
+            debug('deleting sessions for', address.toString());
             const sessionCipher = new libsignal.SessionCipher(
               this.store,
               address
@@ -1039,20 +1083,20 @@ class MessageSender {
       );
 
     const sendToContactPromise = deleteAllSessions(identifier)
-      .catch(logError("resetSession/deleteAllSessions1 error:"))
+      .catch(logError('resetSession/deleteAllSessions1 error:'))
       .then(() => {
-        debug("finished closing local sessions, now sending to contact");
+        debug('finished closing local sessions, now sending to contact');
         return this.sendIndividualProto(
-          number,
+          identifier,
           proto,
           timestamp,
           silent,
           options
-        ).catch(logError("resetSession/sendToContact error:"));
+        ).catch(logError('resetSession/sendToContact error:'));
       })
       .then(() =>
         deleteAllSessions(identifier).catch(
-          logError("resetSession/deleteAllSessions2 error:")
+          logError('resetSession/deleteAllSessions2 error:')
         )
       );
 
@@ -1072,7 +1116,7 @@ class MessageSender {
       [],
       [],
       options
-    ).catch(logError("resetSession/sendSync error:"));
+    ).catch(logError('resetSession/sendSync error:'));
 
     return Promise.all([sendToContactPromise, sendSyncPromise]);
   }
@@ -1081,21 +1125,21 @@ class MessageSender {
     {
       groupId,
       recipients = [],
-      body = "",
+      body = '',
       attachments = [],
       quote,
       preview,
       sticker,
       reaction,
       timestamp,
-      expireTimer
+      expireTimer,
     },
     options = {}
   ) {
     if (this.store.hasGroups()) {
-      groupNumbers = await this.store.getGroupNumbers(groupId);
+      const groupNumbers = await this.store.getGroupNumbers(groupId);
       if (!groupNumbers) {
-        return Promise.reject(new Error("Unknown Group"));
+        return Promise.reject(new Error('Unknown Group'));
       }
     }
 
@@ -1103,7 +1147,7 @@ class MessageSender {
     const myUuid = await this.store.getNumber();
     const attrs = {
       recipients: recipients.filter(r => r !== myE164 && r !== myUuid),
-      body: body,
+      body,
       timestamp,
       attachments,
       quote,
@@ -1113,8 +1157,8 @@ class MessageSender {
       expireTimer,
       group: {
         id: groupId,
-        type: GroupContext.Type.DELIVER
-      }
+        type: GroupContext.Type.DELIVER,
+      },
     };
 
     if (recipients.length === 0) {
@@ -1123,7 +1167,7 @@ class MessageSender {
         failoverIdentifiers: [],
         errors: [],
         unidentifiedDeliveries: [],
-        dataMessage: await this.getMessageProtoObj(attrs)
+        dataMessage: await this.getMessageProtoObj(attrs),
       });
     }
 
@@ -1131,12 +1175,12 @@ class MessageSender {
   }
 
   async createGroup(targetIdentifiers, id, name, avatar, options) {
-    debug("targetIdentifiers", targetIdentifiers);
+    debug('targetIdentifiers', targetIdentifiers);
     const proto = DataMessage.create();
     proto.group = GroupContext.create();
     if (this.store.hasGroups()) {
       await this.store.createNewGroup(id, targetIdentifiers).then(group => {
-        debug("group", group);
+        debug('group', group);
         proto.group.id = stringToArrayBuffer(group.id);
         const { identifiers } = group;
         proto.group.members = identifiers;
@@ -1148,7 +1192,7 @@ class MessageSender {
 
     proto.group.type = GroupContext.Type.UPDATE;
     proto.group.name = name;
-    debug("group proto", proto);
+    debug('group proto', proto);
 
     return this.makeAttachmentPointer(avatar).then(attachment => {
       proto.group.avatar = attachment;
@@ -1173,9 +1217,10 @@ class MessageSender {
         .updateGroupNumbers(groupId, targetIdentifiers)
         .then(identifiers => {
           if (!identifiers) {
-            return Promise.reject(new Error("Unknown Group"));
+            return Promise.reject(new Error('Unknown Group'));
           }
           proto.group.members = identifiers;
+          return identifiers;
         });
     } else {
       proto.group.members = targetIdentifiers;
@@ -1198,19 +1243,47 @@ class MessageSender {
     proto.group.id = stringToArrayBuffer(groupId);
     proto.group.type = GroupContext.Type.UPDATE;
     if (this.store.hasGroups()) {
-      if (typeof newIdentifiers === "string") {
+      if (typeof newIdentifiers === 'string') {
+        // eslint-disable-next-line no-param-reassign
         newIdentifiers = [newIdentifiers];
       }
       await this.store
         .addGroupNumbers(groupId, newIdentifiers)
         .then(identifiers => {
           if (!identifiers) {
-            return Promise.reject(new Error("Unknown Group"));
+            return Promise.reject(new Error('Unknown Group'));
           }
-          proto.group.members = numbers;
+          proto.group.members = identifiers;
+          return identifiers;
         });
     } else {
       proto.group.members = newIdentifiers;
+    }
+    return this.sendGroupProto(proto.group.members, proto, Date.now(), options);
+  }
+
+  // backwards compatibility
+  async addNumberToGroup(groupId, newNumbers, options) {
+    const proto = DataMessage.create();
+    proto.group = GroupContext.create();
+    proto.group.id = stringToArrayBuffer(groupId);
+    proto.group.type = GroupContext.Type.UPDATE;
+    if (this.store.hasGroups()) {
+      if (typeof newNumbers === 'string') {
+        // eslint-disable-next-line no-param-reassign
+        newNumbers = [newNumbers];
+      }
+      await this.store
+        .addGroupNumbers(groupId, newNumbers)
+        .then(identifiers => {
+          if (!identifiers) {
+            return Promise.reject(new Error('Unknown Group'));
+          }
+          proto.group.members = identifiers;
+          return identifiers;
+        });
+    } else {
+      proto.group.members = newNumbers;
     }
     return this.sendGroupProto(proto.group.members, proto, Date.now(), options);
   }
@@ -1224,9 +1297,10 @@ class MessageSender {
     if (this.store.hasGroups()) {
       await this.store.getGroupNumbers(groupId).then(identifiers => {
         if (!identifiers) {
-          return Promise.reject(new Error("Unknown Group"));
+          return Promise.reject(new Error('Unknown Group'));
         }
         proto.group.members = identifiers;
+        return identifiers;
       });
     } else {
       proto.group.members = groupIdentifiers;
@@ -1242,9 +1316,10 @@ class MessageSender {
     if (this.store.hasGroups()) {
       await this.store.getGroupNumbers(groupId).then(identifiers => {
         if (!identifiers) {
-          return Promise.reject(new Error("Unknown Group"));
+          return Promise.reject(new Error('Unknown Group'));
         }
-        proto.group.members = numbers;
+        proto.group.members = identifiers;
+        return identifiers;
       });
     } else {
       proto.group.members = groupIdentifiers;
@@ -1268,7 +1343,7 @@ class MessageSender {
     if (this.store.hasGroups()) {
       await this.store.getGroupNumbers(groupId).then(identifiers => {
         if (!identifiers) {
-          return Promise.reject(new Error("Unknown Group"));
+          return Promise.reject(new Error('Unknown Group'));
         }
         proto.group.members = identifiers;
         return this.store
@@ -1290,9 +1365,10 @@ class MessageSender {
     options
   ) {
     if (this.store.hasGroups()) {
+      // eslint-disable-next-line no-param-reassign
       groupIdentifiers = await this.store.getGroupNumbers(groupId);
       if (!groupIdentifiers) {
-        return Promise.reject(new Error("Unknown Group"));
+        return Promise.reject(new Error('Unknown Group'));
       }
     }
 
@@ -1302,14 +1378,14 @@ class MessageSender {
       identifier => identifier !== myNumber && identifier !== myUuid
     );
     const attrs = {
-      recipient,
+      recipients,
       timestamp,
       expireTimer,
       flags: DataMessage.Flags.EXPIRATION_TIMER_UPDATE,
       group: {
         id: groupId,
-        type: GroupContext.Type.DELIVER
-      }
+        type: GroupContext.Type.DELIVER,
+      },
     };
 
     if (recipients.length === 0) {
@@ -1318,7 +1394,7 @@ class MessageSender {
         failoverIdentifiers: [],
         errors: [],
         unidentifiedDeliveries: [],
-        dataMessage: await this.getMessageProtoObj(attrs)
+        dataMessage: await this.getMessageProtoObj(attrs),
       });
     }
 
@@ -1336,11 +1412,30 @@ class MessageSender {
         recipients: [identifier],
         timestamp,
         expireTimer,
-        flags: DataMessage.Flags.EXPIRATION_TIMER_UPDATE
+        flags: DataMessage.Flags.EXPIRATION_TIMER_UPDATE,
       },
       options
     );
   }
+
+  // backwards compatibility
+  sendExpirationTimerUpdateToNumber(
+    number,
+    expireTimer,
+    timestamp,
+    options = {}
+  ) {
+    return this.sendMessage(
+      {
+        recipients: [number],
+        timestamp,
+        expireTimer,
+        flags: DataMessage.Flags.EXPIRATION_TIMER_UPDATE,
+      },
+      options
+    );
+  }
+
   makeProxiedRequest(url, options) {
     return this.server.makeProxiedRequest(url, options);
   }

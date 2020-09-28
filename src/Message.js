@@ -2,41 +2,22 @@
  * vim: ts=2:sw=2:expandtab
  */
 
-"use strict";
 
-const ByteBuffer = require("bytebuffer");
-const protobuf = require("./protobufs.js");
-const DataMessage = protobuf.lookupType("signalservice.DataMessage");
-const DataMessageQuote = protobuf.lookupType("signalservice.DataMessage.Quote");
+
+const helpers = require('./helpers.js');
+const protobuf = require('./protobufs.js');
+
+const DataMessage = protobuf.lookupType('signalservice.DataMessage');
+const DataMessageQuote = protobuf.lookupType('signalservice.DataMessage.Quote');
 const DataMessageSticker = protobuf.lookupType(
-  "signalservice.DataMessage.Sticker"
+  'signalservice.DataMessage.Sticker'
 );
 const DataMessagePreview = protobuf.lookupType(
-  "signalservice.DataMessage.Preview"
+  'signalservice.DataMessage.Preview'
 );
-const GroupContext = protobuf.lookupType("signalservice.GroupContext");
+const GroupContext = protobuf.lookupType('signalservice.GroupContext');
 
 /* eslint-disable more/no-then, no-bitwise */
-
-function stringToArrayBuffer(str) {
-  if (typeof str !== "string") {
-    throw new Error("Passed non-string to stringToArrayBuffer");
-  }
-  const res = new ArrayBuffer(str.length);
-  const uint = new Uint8Array(res);
-  for (let i = 0; i < str.length; i += 1) {
-    uint[i] = str.charCodeAt(i);
-  }
-  return res;
-}
-function hexStringToArrayBuffer(string) {
-  return ByteBuffer.wrap(string, "hex")
-    .toByteBuffer.wrap(string, "base64")
-    .toArrayBuffer();
-}
-function base64ToArrayBuffer(string) {
-  return ByteBuffer.wrap(string, "base64").toArrayBuffer();
-}
 
 class Message {
   constructor(options) {
@@ -55,54 +36,54 @@ class Message {
     this.timestamp = options.timestamp;
 
     if (!(this.recipients instanceof Array)) {
-      throw new Error("Invalid recipient list");
+      throw new Error('Invalid recipient list');
     }
 
     if (!this.group && this.recipients.length !== 1) {
-      throw new Error("Invalid recipient list for non-group");
+      throw new Error('Invalid recipient list for non-group');
     }
 
-    if (typeof this.timestamp !== "number") {
-      throw new Error("Invalid timestamp");
+    if (typeof this.timestamp !== 'number') {
+      throw new Error('Invalid timestamp');
     }
 
     if (this.expireTimer !== undefined && this.expireTimer !== null) {
-      if (typeof this.expireTimer !== "number" || !(this.expireTimer >= 0)) {
-        throw new Error("Invalid expireTimer");
+      if (typeof this.expireTimer !== 'number' || !(this.expireTimer >= 0)) {
+        throw new Error('Invalid expireTimer');
       }
     }
 
     if (this.attachments) {
       if (!(this.attachments instanceof Array)) {
-        throw new Error("Invalid message attachments");
+        throw new Error('Invalid message attachments');
       }
     }
     if (this.flags !== undefined) {
-      if (typeof this.flags !== "number") {
-        throw new Error("Invalid message flags");
+      if (typeof this.flags !== 'number') {
+        throw new Error('Invalid message flags');
       }
     }
     if (this.isEndSession()) {
       if (
-        this.body !== null ||
-        this.group !== null ||
-        this.attachments.length !== 0
+        this.body !== null
+        || this.group !== null
+        || this.attachments.length !== 0
       ) {
-        throw new Error("Invalid end session message");
+        throw new Error('Invalid end session message');
       }
     } else {
       if (
-        typeof this.timestamp !== "number" ||
-        (this.body && typeof this.body !== "string")
+        typeof this.timestamp !== 'number'
+        || (this.body && typeof this.body !== 'string')
       ) {
-        throw new Error("Invalid message body");
+        throw new Error('Invalid message body');
       }
       if (this.group) {
         if (
-          typeof this.group.id !== "string" ||
-          typeof this.group.type !== "number"
+          typeof this.group.id !== 'string'
+          || typeof this.group.type !== 'number'
         ) {
-          throw new Error("Invalid group context");
+          throw new Error('Invalid group context');
         }
       }
     }
@@ -114,8 +95,8 @@ class Message {
 
   toProto() {
     if (
-      this.dataMessage !== undefined &&
-      this.dataMessage.$type === DataMessage
+      this.dataMessage !== undefined
+      && this.dataMessage.$type === DataMessage
     ) {
       return this.dataMessage;
     }
@@ -132,16 +113,16 @@ class Message {
     }
     if (this.group) {
       proto.group = GroupContext.create();
-      proto.group.id = new Uint8Array(stringToArrayBuffer(this.group.id));
+      proto.group.id = new Uint8Array(helpers.stringToArrayBuffer(this.group.id));
       proto.group.type = this.group.type;
     }
     if (this.sticker) {
       proto.sticker = DataMessageSticker.create();
       proto.sticker.packId = new Uint8Array(
-        hexStringToArrayBuffer(this.sticker.packId)
+        helpers.hexStringToArrayBuffer(this.sticker.packId)
       );
       proto.sticker.packKey = new Uint8Array(
-        base64ToArrayBuffer(this.sticker.packKey)
+        helpers.base64ToArrayBuffer(this.sticker.packKey)
       );
       proto.sticker.stickerId = this.sticker.stickerId;
 

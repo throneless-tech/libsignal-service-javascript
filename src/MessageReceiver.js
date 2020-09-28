@@ -2,30 +2,33 @@
  * vim: ts=2:sw=2:expandtab
  */
 
-"use strict";
 
-const debug = require("debug")("libsignal-service:MessageReceiver");
-const _ = require("lodash");
-const libsignal = require("@throneless/libsignal-protocol");
-const ByteBuffer = require("bytebuffer");
-const PQueue = require("p-queue");
-const EventTarget = require("./EventTarget.js");
-const Event = require("./Event.js");
-const Worker = require("tiny-worker");
-const createTaskWithTimeout = require("./taskWithTimeout.js");
-const crypto = require("./crypto.js");
-const errors = require("./errors.js");
-const WebSocketResource = require("./WebSocketResource.js");
-const protobuf = require("./protobufs.js");
-const Metadata = require("./Metadata.js");
-const Content = protobuf.lookupType("signalservice.Content");
-const DataMessage = protobuf.lookupType("signalservice.DataMessage");
-const Envelope = protobuf.lookupType("signalservice.Envelope");
-const GroupContext = protobuf.lookupType("signalservice.GroupContext");
-const ReceiptMessage = protobuf.lookupType("signalservice.ReceiptMessage");
-const TypingMessage = protobuf.lookupType("signalservice.TypingMessage");
+
+const debug = require('debug')('libsignal-service:MessageReceiver');
+const _ = require('lodash');
+const libsignal = require('@throneless/libsignal-protocol');
+const ByteBuffer = require('bytebuffer');
+const { default: PQueue } = require('p-queue');
+const getGuid = require('uuid/v4');
+const WebSocket = require('websocket').w3cwebsocket;
+const EventTarget = require('./EventTarget.js');
+const Event = require('./Event.js');
+const createTaskWithTimeout = require('./taskWithTimeout.js');
+const crypto = require('./crypto.js');
+const errors = require('./errors.js');
+const helpers = require('./helpers.js');
+const WebSocketResource = require('./WebSocketResource.js');
+const protobuf = require('./protobufs.js');
+const Metadata = require('./Metadata.js');
+
+const Content = protobuf.lookupType('signalservice.Content');
+const DataMessage = protobuf.lookupType('signalservice.DataMessage');
+const Envelope = protobuf.lookupType('signalservice.Envelope');
+const GroupContext = protobuf.lookupType('signalservice.GroupContext');
+const ReceiptMessage = protobuf.lookupType('signalservice.ReceiptMessage');
+const SyncMessage = protobuf.lookupType('signalservice.SyncMessage');
+const TypingMessage = protobuf.lookupType('signalservice.TypingMessage');
 const { ContactBuffer, GroupBuffer } = protobuf;
-const getGuid = require("uuid/v4");
 
 /* eslint-disable more/no-then */
 
@@ -44,20 +47,20 @@ class MessageReceiver extends EventTarget {
     this.pendingQueue = new PQueue({ concurrency: 1 });
     this.appQueue = new PQueue({ concurrency: 1 });
 
-    this.cacheAddBatcher = window.Signal.Util.createBatcher({
+    this.cacheAddBatcher = helpers.createBatcher({
       wait: 200,
       maxSize: 30,
-      processBatch: this.cacheAndQueueBatch.bind(this)
+      processBatch: this.cacheAndQueueBatch.bind(this),
     });
-    this.cacheUpdateBatcher = window.Signal.Util.createBatcher({
+    this.cacheUpdateBatcher = helpers.createBatcher({
       wait: 500,
       maxSize: 30,
-      processBatch: this.cacheUpdateBatch.bind(this)
+      processBatch: this.cacheUpdateBatch.bind(this),
     });
-    this.cacheRemoveBatcher = window.Signal.Util.createBatcher({
+    this.cacheRemoveBatcher = helpers.createBatcher({
       wait: 500,
       maxSize: 30,
-      processBatch: this.cacheRemoveBatch.bind(this)
+      processBatch: this.cacheRemoveBatch.bind(this),
     });
 
     if (options.retryCached) {
@@ -71,7 +74,7 @@ class MessageReceiver extends EventTarget {
       this.uuid = await this.store.getUuid();
       this.deviceId = await this.store.getDeviceId();
       let username = this.uuid || this.number;
-      username = username + "." + this.deviceId;
+      username = `${username  }.${  this.deviceId}`;
       const password = await this.store.getPassword();
       this.server = this.constructor.WebAPI.connect({ username, password });
     }
@@ -82,7 +85,7 @@ class MessageReceiver extends EventTarget {
 
     this.count = 0;
     if (this.hasConnected) {
-      const ev = new Event("reconnect");
+      const ev = new Event('reconnect');
       this.dispatchEvent(ev);
     }
 
@@ -101,24 +104,24 @@ class MessageReceiver extends EventTarget {
     this.wsr = new WebSocketResource(this.socket, {
       handleRequest: this.handleRequest.bind(this),
       keepalive: {
-        path: "/v1/keepalive",
-        disconnect: true
-      }
+        path: '/v1/keepalive',
+        disconnect: true,
+      },
     });
 
     // Because sometimes the socket doesn't properly emit its close event
     this._onClose = this.onclose.bind(this);
-    this.wsr.addEventListener("close", this._onClose);
+    this.wsr.addEventListener('close', this._onClose);
   }
 
   stopProcessing() {
-    debug("MessageReceiver: stopProcessing requested");
+    debug('MessageReceiver: stopProcessing requested');
     this.stoppingProcessing = true;
     return this.close();
   }
 
   unregisterBatchers() {
-    debug("MessageReceiver: unregister batchers");
+    debug('MessageReceiver: unregister batchers');
     this.cacheAddBatcher.unregister();
     this.cacheUpdateBatcher.unregister();
     this.cacheRemoveBatcher.unregister();
@@ -133,19 +136,19 @@ class MessageReceiver extends EventTarget {
     }
 
     if (this.wsr) {
-      this.wsr.removeEventListener("close", this._onClose);
+      this.wsr.removeEventListener('close', this._onClose);
       this.wsr = null;
     }
   }
 
   close() {
-    debug("MessageReceiver.close()");
+    debug('MessageReceiver.close()');
     this.calledClose = true;
 
     // Our WebSocketResource instance will close the socket and emit a 'close' event
     //   if the socket doesn't emit one quickly enough.
     if (this.wsr) {
-      this.wsr.close(3000, "called close");
+      this.wsr.close(3000, 'called close');
     }
 
     this.clearRetryTimeout();
@@ -154,11 +157,11 @@ class MessageReceiver extends EventTarget {
   }
 
   onopen() {
-    debug("websocket open");
+    debug('websocket open');
   }
 
   onerror() {
-    debug("websocket error");
+    debug('websocket error');
   }
 
   dispatchAndWait(event) {
@@ -169,10 +172,10 @@ class MessageReceiver extends EventTarget {
 
   onclose(ev) {
     debug(
-      "websocket closed",
+      'websocket closed',
       ev.code,
-      ev.reason || "",
-      "calledClose:",
+      ev.reason || '',
+      'calledClose:',
       this.calledClose
     );
 
@@ -192,7 +195,7 @@ class MessageReceiver extends EventTarget {
       .getDevices(this.number || this.uuid)
       .then(this.connect.bind(this)) // No HTTP error? Reconnect
       .catch(e => {
-        const event = new Event("error");
+        const event = new Event('error');
         event.error = e;
         return this.dispatchAndWait(event);
       });
@@ -202,11 +205,11 @@ class MessageReceiver extends EventTarget {
     // We do the message decryption here, instead of in the ordered pending queue,
     // to avoid exposing the time it took us to process messages through the time-to-ack.
 
-    if (request.path !== "/api/v1/message") {
-      debug("got request", request.verb, request.path);
-      request.respond(200, "OK");
+    if (request.path !== '/api/v1/message') {
+      debug('got request', request.verb, request.path);
+      request.respond(200, 'OK');
 
-      if (request.verb === "PUT" && request.path === "/api/v1/queue/empty") {
+      if (request.verb === 'PUT' && request.path === '/api/v1/queue/empty') {
         this.incomingQueue.add(() => this.onEmpty());
       }
       return;
@@ -215,49 +218,49 @@ class MessageReceiver extends EventTarget {
     const job = async () => {
       let plaintext;
       const headers = request.headers || [];
-      if (headers.includes("X-Signal-Key: true")) {
-        plaintext = await textsecure.crypto.decryptWebsocketMessage(
+      if (headers.includes('X-Signal-Key: true')) {
+        plaintext = await crypto.decryptWebsocketMessage(
           request.body,
           this.signalingKey
         );
       } else {
-        plaintext = request.body.toArrayBuffer();
+        plaintext = request.body.buffer;
       }
 
       try {
         const envelope = Envelope.decode(new Uint8Array(plaintext));
         helpers.normalizeUuids(
           envelope,
-          ["sourceUuid"],
-          "message_receiver::handleRequest::job"
+          ['sourceUuid'],
+          'message_receiver::handleRequest::job'
         );
         // After this point, decoding errors are not the server's
         //   fault, and we should handle them gracefully and tell the
         //   user they received an invalid message
 
         if (await this.isBlocked(envelope.source)) {
-          request.respond(200, "OK");
+          request.respond(200, 'OK');
           return;
         }
 
-        if (this.isUuidBlocked(envelope.sourceUuid)) {
-          request.respond(200, "OK");
+        if (await this.isUuidBlocked(envelope.sourceUuid)) {
+          request.respond(200, 'OK');
           return;
         }
 
         // Make non-private envelope IDs dashless so they don't get redacted
         // from logs
-        envelope.id = (envelope.serverGuid || getGuid()).replace(/-/g, "");
+        envelope.id = (envelope.serverGuid || getGuid()).replace(/-/g, '');
 
         envelope.serverTimestamp = envelope.serverTimestamp
           ? envelope.serverTimestamp.toNumber()
           : null;
 
-        this.cacheAndQueueBatchQueue(envelope, plaintext, request);
+        this.cacheAndQueue(envelope, plaintext, request);
       } catch (e) {
-        request.respond(500, "Bad encrypted websocket message");
-        debug("Error handling incoming message:", e && e.stack ? e.stack : e);
-        const ev = new Event("error");
+        request.respond(500, 'Bad encrypted websocket message');
+        debug('Error handling incoming message:', e && e.stack ? e.stack : e);
+        const ev = new Event('error');
         ev.error = e;
         await this.dispatchAndWait(ev);
       }
@@ -284,7 +287,7 @@ class MessageReceiver extends EventTarget {
   onEmpty() {
     const emitEmpty = () => {
       debug("MessageReceiver: emitting 'empty' event");
-      const ev = new Event("empty");
+      const ev = new Event('empty');
       this.dispatchAndWait(ev);
       this.isEmptied = true;
 
@@ -308,13 +311,18 @@ class MessageReceiver extends EventTarget {
       this.count = 0;
     };
 
+    const waitForCacheAddBatcher = async () => {
+      await this.cacheAddBatcher.onIdle();
+      this.incomingQueue.add(waitForIncomingQueue);  
+    };
+
     waitForCacheAddBatcher();
   }
 
   drain() {
     const waitForIncomingQueue = () =>
       this.addToQueue(() => {
-        debug("drained");
+        debug('drained');
       });
 
     return this.incomingQueue.add(waitForIncomingQueue);
@@ -325,7 +333,7 @@ class MessageReceiver extends EventTarget {
     if (count % 10 !== 0) {
       return;
     }
-    const ev = new Event("progress");
+    const ev = new Event('progress');
     ev.count = count;
     this.dispatchEvent(ev);
   }
@@ -348,7 +356,7 @@ class MessageReceiver extends EventTarget {
         );
       }
 
-      if (typeof envelopePlaintext === "string") {
+      if (typeof envelopePlaintext === 'string') {
         envelopePlaintext = MessageReceiver.stringToArrayBuffer(
           envelopePlaintext
         );
@@ -358,8 +366,7 @@ class MessageReceiver extends EventTarget {
       envelope.source = envelope.source || item.source;
       envelope.sourceUuid = envelope.sourceUuid || item.sourceUuid;
       envelope.sourceDevice = envelope.sourceDevice || item.sourceDevice;
-      envelope.serverTimestamp =
-        envelope.serverTimestamp || item.serverTimestamp;
+      envelope.serverTimestamp =        envelope.serverTimestamp || item.serverTimestamp;
 
       const { decrypted } = item;
       if (decrypted) {
@@ -371,7 +378,7 @@ class MessageReceiver extends EventTarget {
           );
         }
 
-        if (typeof payloadPlaintext === "string") {
+        if (typeof payloadPlaintext === 'string') {
           payloadPlaintext = MessageReceiver.stringToArrayBuffer(
             payloadPlaintext
           );
@@ -382,9 +389,9 @@ class MessageReceiver extends EventTarget {
       }
     } catch (error) {
       debug(
-        "queueCached error handling item",
+        'queueCached error handling item',
         item.id,
-        "removing it. Error:",
+        'removing it. Error:',
         error && error.stack ? error.stack : error
       );
 
@@ -393,9 +400,9 @@ class MessageReceiver extends EventTarget {
         await this.store.removeUnprocessed(id);
       } catch (deleteError) {
         debug(
-          "queueCached error deleting item",
+          'queueCached error deleting item',
           item.id,
-          "Error:",
+          'Error:',
           deleteError && deleteError.stack ? deleteError.stack : deleteError
         );
       }
@@ -429,8 +436,8 @@ class MessageReceiver extends EventTarget {
   }
 
   async getAllFromCache() {
-    debug("getAllFromCache");
-    const count = await this.store.countUnprocessed();
+    debug('getAllFromCache');
+    const count = await this.store.getUnprocessedCount();
 
     if (count > 1500) {
       await this.store.removeAllUnprocessed();
@@ -441,7 +448,7 @@ class MessageReceiver extends EventTarget {
     }
 
     const items = await this.store.getAllUnprocessed();
-    debug("getAllFromCache loaded", items.length, "saved envelopes");
+    debug('getAllFromCache loaded', items.length, 'saved envelopes');
 
     return Promise.all(
       _.map(items, async item => {
@@ -449,14 +456,14 @@ class MessageReceiver extends EventTarget {
 
         try {
           if (attempts >= 1) {
-            debug("getAllFromCache final attempt for envelope", item.id);
+            debug('getAllFromCache final attempt for envelope', item.id);
             await this.store.removeUnprocessed(item.id);
           } else {
             await this.store.updateAttemptsUnprocessed(item.id, attempts);
           }
         } catch (error) {
           debug(
-            "getAllFromCache error updating item after load:",
+            'getAllFromCache error updating item after load:',
             error && error.stack ? error.stack : error
           );
         }
@@ -471,17 +478,17 @@ class MessageReceiver extends EventTarget {
     try {
       await this.store.batchAddUnprocessed(dataArray);
       items.forEach(item => {
-        item.request.respond(200, "OK");
+        item.request.respond(200, 'OK');
         this.queueEnvelope(item.envelope);
       });
 
       this.maybeScheduleRetryTimeout();
     } catch (error) {
       items.forEach(item => {
-        item.request.respond(500, "Failed to cache message");
+        item.request.respond(500, 'Failed to cache message');
       });
       debug(
-        "cacheAndQueue error trying to add messages to cache:",
+        'cacheAndQueue error trying to add messages to cache:',
         error && error.stack ? error.stack : error
       );
     }
@@ -489,23 +496,23 @@ class MessageReceiver extends EventTarget {
 
   cacheAndQueue(envelope, plaintext, request) {
     const { id } = envelope;
-    const decoded = this.arrayBufferToStringBase64(plaintext);
+    const decoded = MessageReceiver.arrayBufferToStringBase64(plaintext);
     const data = {
       id,
       version: 2,
       envelope: new Uint8Array(decoded),
       timestamp: Date.now(),
-      attempts: 1
+      attempts: 1,
     };
     this.cacheAddBatcher.add({
       request,
       envelope,
-      data
+      data,
     });
   }
 
   async cacheUpdateBatch(items) {
-    await this.store.addDecryptedDataToListUnprocessed(items);
+    await this.store.updateUnprocessedsWithData(items);
   }
 
   async updateCache(envelope, plaintext) {
@@ -515,7 +522,7 @@ class MessageReceiver extends EventTarget {
       sourceUuid: envelope.sourceUuid,
       sourceDevice: envelope.sourceDevice,
       serverTimestamp: envelope.serverTimestamp,
-      decrypted: MessageReceiver.arrayBufferToStringBase64(plaintext)
+      decrypted: MessageReceiver.arrayBufferToStringBase64(plaintext),
     };
     this.cacheUpdateBatcher.add({ id, data });
   }
@@ -531,7 +538,7 @@ class MessageReceiver extends EventTarget {
 
   queueDecryptedEnvelope(envelope, plaintext) {
     const id = this.getEnvelopeId(envelope);
-    debug("queueing decrypted envelope", id);
+    debug('queueing decrypted envelope', id);
 
     const task = this.handleDecryptedEnvelope.bind(this, envelope, plaintext);
     const taskWithTimeout = createTaskWithTimeout(
@@ -542,7 +549,7 @@ class MessageReceiver extends EventTarget {
 
     return promise.catch(error => {
       debug(
-        "queueDecryptedEnvelope error handling envelope ${id}:",
+        `queueDecryptedEnvelope error handling envelope ${id}:`,
         error && error.stack ? error.stack : error
       );
     });
@@ -550,7 +557,7 @@ class MessageReceiver extends EventTarget {
 
   queueEnvelope(envelope) {
     const id = this.getEnvelopeId(envelope);
-    debug("queueing envelope", id);
+    debug('queueing envelope', id);
 
     const task = this.handleEnvelope.bind(this, envelope);
     const taskWithTimeout = createTaskWithTimeout(task, `queueEnvelope ${id}`);
@@ -558,7 +565,7 @@ class MessageReceiver extends EventTarget {
 
     return promise.catch(error => {
       debug(
-        "queueEnvelope error handling envelope ${id}:",
+        `queueEnvelope error handling envelope ${id}:`,
         error && error.stack ? error.stack : error
       );
     });
@@ -576,11 +583,11 @@ class MessageReceiver extends EventTarget {
 
     if (envelope.content) {
       return this.innerHandleContentMessage(envelope, plaintext);
-    } else if (envelope.legacyMessage) {
+    } if (envelope.legacyMessage) {
       return this.innerHandleLegacyMessage(envelope, plaintext);
     }
     this.removeFromCache(envelope);
-    throw new Error("Received message with no content and no legacyMessage");
+    throw new Error('Received message with no content and no legacyMessage');
   }
 
   handleEnvelope(envelope) {
@@ -594,17 +601,17 @@ class MessageReceiver extends EventTarget {
 
     if (envelope.content) {
       return this.handleContentMessage(envelope);
-    } else if (envelope.legacyMessage) {
+    } if (envelope.legacyMessage) {
       return this.handleLegacyMessage(envelope);
     }
     this.removeFromCache(envelope);
-    throw new Error("Received message with no content and no legacyMessage");
+    throw new Error('Received message with no content and no legacyMessage');
   }
 
   getStatus() {
     if (this.socket) {
       return this.socket.readyState;
-    } else if (this.hasConnected) {
+    } if (this.hasConnected) {
       return WebSocket.CLOSED;
     }
     return -1;
@@ -612,13 +619,13 @@ class MessageReceiver extends EventTarget {
 
   onDeliveryReceipt(envelope) {
     return new Promise((resolve, reject) => {
-      const ev = new Event("delivery");
+      const ev = new Event('delivery');
       ev.confirm = this.removeFromCache.bind(this, envelope);
       ev.deliveryReceipt = {
         timestamp: envelope.timestamp.toNumber(),
         source: envelope.source,
         sourceUuid: envelope.sourceUuid,
-        sourceDevice: envelope.sourceDevice
+        sourceDevice: envelope.sourceDevice,
       };
       this.dispatchAndWait(ev).then(resolve, reject);
     });
@@ -635,7 +642,7 @@ class MessageReceiver extends EventTarget {
         plaintext = plaintext.buffer;
         break;
       } else if (paddedPlaintext[i] !== 0x00) {
-        throw new Error("Invalid padding");
+        throw new Error('Invalid padding');
       }
     }
 
@@ -659,8 +666,8 @@ class MessageReceiver extends EventTarget {
 
     // No limit on message keys if we're communicating with our other devices
     if (
-      (envelope.source && ourNumber && ourNumber === envelope.source) ||
-      (envelope.sourceUuid && ourUuid && ourUuid === envelope.sourceUuid)
+      (envelope.source && ourNumber && ourNumber === envelope.source)
+      || (envelope.sourceUuid && ourUuid && ourUuid === envelope.sourceUuid)
     ) {
       options.messageKeysLimit = false;
     }
@@ -675,18 +682,18 @@ class MessageReceiver extends EventTarget {
     const me = {
       number: ourNumber,
       uuid: ourUuid,
-      deviceId: parseInt(deviceId, 10)
+      deviceId: parseInt(deviceId, 10),
     };
 
     switch (envelope.type) {
       case Envelope.Type.CIPHERTEXT:
-        debug("message from", this.getEnvelopeId(envelope));
+        debug('message from', this.getEnvelopeId(envelope));
         promise = sessionCipher
           .decryptWhisperMessage(ciphertext)
           .then(this.unpad);
         break;
       case Envelope.Type.PREKEY_BUNDLE:
-        debug("prekey message from", this.getEnvelopeId(envelope));
+        debug('prekey message from', this.getEnvelopeId(envelope));
         promise = this.decryptPreKeyWhisperMessage(
           ciphertext,
           sessionCipher,
@@ -694,7 +701,7 @@ class MessageReceiver extends EventTarget {
         );
         break;
       case Envelope.Type.UNIDENTIFIED_SENDER:
-        debug("received unidentified sender message");
+        debug('received unidentified sender message');
         promise = secretSessionCipher
           .decrypt(
             Metadata.createCertificateValidator(serverTrustRoot),
@@ -713,11 +720,11 @@ class MessageReceiver extends EventTarget {
               }
 
               if (
-                (sender && this.isBlocked(sender.getName())) ||
-                (senderUuid && this.isUuidBlocked(senderUuid.getName()))
+                (sender && this.isBlocked(sender.getName()))
+                || (senderUuid && this.isUuidBlocked(senderUuid.getName()))
               ) {
                 debug(
-                  "Dropping blocked message after sealed sender decryption"
+                  'Dropping blocked message after sealed sender decryption'
                 );
                 return { isBlocked: true };
               }
@@ -734,17 +741,15 @@ class MessageReceiver extends EventTarget {
               envelope.sourceUuid = senderUuid && senderUuid.getName();
               helpers.normalizeUuids(
                 envelope,
-                ["sourceUuid"],
-                "message_receiver::decrypt::UNIDENTIFIED_SENDER"
+                ['sourceUuid'],
+                'message_receiver::decrypt::UNIDENTIFIED_SENDER'
               );
 
               // eslint-disable-next-line no-param-reassign
-              envelope.sourceDevice =
-                (sender && sender.getDeviceId()) ||
-                (senderUuid && senderUuid.getDeviceId());
+              envelope.sourceDevice = (sender && sender.getDeviceId())
+                || (senderUuid && senderUuid.getDeviceId());
 
               // eslint-disable-next-line no-param-reassign
-              envelope.unidentifiedDeliveryReceived = !originalSource;
               envelope.unidentifiedDeliveryReceived = !(
                 originalSource || originalSourceUuid
               );
@@ -753,6 +758,7 @@ class MessageReceiver extends EventTarget {
               //   decrypt methods used above.
               return this.unpad(content);
             },
+            // eslint-disable-next-line consistent-return 
             error => {
               const { sender, senderUuid } = error || {};
 
@@ -761,11 +767,11 @@ class MessageReceiver extends EventTarget {
                 const originalSourceUuid = envelope.sourceUuid;
 
                 if (
-                  (sender && this.isBlocked(sender.getName())) ||
-                  (senderUuid && this.isUuidBlocked(senderUuid.getName()))
+                  (sender && this.isBlocked(sender.getName()))
+                  || (senderUuid && this.isUuidBlocked(senderUuid.getName()))
                 ) {
                   debug(
-                    "Dropping blocked message with error after sealed sender decryption"
+                    'Dropping blocked message with error after sealed sender decryption'
                   );
                   return { isBlocked: true };
                 }
@@ -773,17 +779,15 @@ class MessageReceiver extends EventTarget {
                 // eslint-disable-next-line no-param-reassign
                 envelope.source = sender && sender.getName();
                 // eslint-disable-next-line no-param-reassign
-                envelope.sourceUuid =
-                  senderUuid && senderUuid.getName().toLowerCase();
+                envelope.sourceUuid =                  senderUuid && senderUuid.getName().toLowerCase();
                 helpers.normalizeUuids(
                   envelope,
-                  ["sourceUuid"],
-                  "message_receiver::decrypt::UNIDENTIFIED_SENDER::error"
+                  ['sourceUuid'],
+                  'message_receiver::decrypt::UNIDENTIFIED_SENDER::error'
                 );
                 // eslint-disable-next-line no-param-reassign
-                envelope.sourceDevice =
-                  (sender && sender.getDeviceId()) ||
-                  (senderUuid && senderUuid.getDeviceId());
+                envelope.sourceDevice =                  (sender && sender.getDeviceId())
+                  || (senderUuid && senderUuid.getDeviceId());
 
                 // eslint-disable-next-line no-param-reassign
                 envelope.unidentifiedDeliveryReceived = !(
@@ -800,7 +804,7 @@ class MessageReceiver extends EventTarget {
           );
         break;
       default:
-        promise = Promise.reject(new Error("Unknown message type"));
+        promise = Promise.reject(new Error('Unknown message type'));
     }
 
     return promise
@@ -820,7 +824,7 @@ class MessageReceiver extends EventTarget {
       .catch(error => {
         let errorToThrow = error;
 
-        if (error && error.message === "Unknown identity key") {
+        if (error && error.message === 'Unknown identity key') {
           // create an error that the UI will pick up and ask the
           // user if they want to re-negotiate
           const buffer = ByteBuffer.wrap(ciphertext);
@@ -830,7 +834,7 @@ class MessageReceiver extends EventTarget {
             error.identityKey
           );
         }
-        const ev = new Event("error");
+        const ev = new Event('error');
         ev.error = errorToThrow;
         ev.proto = envelope;
         ev.confirm = this.removeFromCache.bind(this, envelope);
@@ -846,7 +850,7 @@ class MessageReceiver extends EventTarget {
     try {
       return this.unpad(padded);
     } catch (e) {
-      if (e.message === "Unknown identity key") {
+      if (e.message === 'Unknown identity key') {
         // create an error that the UI will pick up and ask the
         // user if they want to re-negotiate
         const buffer = ByteBuffer.wrap(ciphertext);
@@ -867,7 +871,7 @@ class MessageReceiver extends EventTarget {
       message: msg,
       expirationStartTimestamp,
       unidentifiedStatus,
-      isRecipientUpdate
+      isRecipientUpdate,
     } = sentContainer;
 
     let p = Promise.resolve();
@@ -880,11 +884,10 @@ class MessageReceiver extends EventTarget {
         const groupId = message.group && message.group.id;
         const isBlocked = await this.isGroupBlocked(groupId);
         const { source, sourceUuid } = envelope;
-        const ourE164 = textsecure.storage.user.getNumber();
-        const ourUuid = textsecure.storage.user.getUuid();
-        const isMe =
-          (source && ourE164 && source === ourE164) ||
-          (sourceUuid && ourUuid && sourceUuid === ourUuid);
+        const ourE164 = this.store.getNumber();
+        const ourUuid = this.store.getUuid();
+        const isMe =          (source && ourE164 && source === ourE164)
+          || (sourceUuid && ourUuid && sourceUuid === ourUuid);
         const isLeavingGroup = Boolean(
           message.group && message.group.type === GroupContext.Type.QUIT
         );
@@ -898,7 +901,7 @@ class MessageReceiver extends EventTarget {
           return this.removeFromCache(envelope);
         }
 
-        const ev = new Event("sent");
+        const ev = new Event('sent');
         ev.confirm = this.removeFromCache.bind(this, envelope);
         ev.data = {
           destination,
@@ -906,7 +909,7 @@ class MessageReceiver extends EventTarget {
           device: envelope.sourceDevice,
           unidentifiedStatus,
           message,
-          isRecipientUpdate
+          isRecipientUpdate,
         };
         if (expirationStartTimestamp) {
           ev.data.expirationStartTimestamp = expirationStartTimestamp.toNumber();
@@ -917,7 +920,7 @@ class MessageReceiver extends EventTarget {
   }
 
   handleDataMessage(envelope, msg) {
-    debug("data message from", this.getEnvelopeId(envelope));
+    debug('data message from', this.getEnvelopeId(envelope));
     let p = Promise.resolve();
     // eslint-disable-next-line no-bitwise
     if (msg.flags & DataMessage.Flags.END_SESSION) {
@@ -929,11 +932,10 @@ class MessageReceiver extends EventTarget {
           const groupId = message.group && message.group.id;
           const isBlocked = await this.isGroupBlocked(groupId);
           const { source, sourceUuid } = envelope;
-          const ourE164 = textsecure.storage.user.getNumber();
-          const ourUuid = textsecure.storage.user.getUuid();
-          const isMe =
-            (source && ourE164 && source === ourE164) ||
-            (sourceUuid && ourUuid && sourceUuid === ourUuid);
+          const ourE164 = this.store.getNumber();
+          const ourUuid = this.store.getUuid();
+          const isMe =            (source && ourE164 && source === ourE164)
+            || (sourceUuid && ourUuid && sourceUuid === ourUuid);
           const isLeavingGroup = Boolean(
             message.group && message.group.type === GroupContext.Type.QUIT
           );
@@ -947,7 +949,7 @@ class MessageReceiver extends EventTarget {
             return this.removeFromCache(envelope);
           }
 
-          const ev = new Event("message");
+          const ev = new Event('message');
           ev.confirm = this.removeFromCache.bind(this, envelope);
           ev.data = {
             source: envelope.source,
@@ -956,7 +958,7 @@ class MessageReceiver extends EventTarget {
             timestamp: envelope.timestamp.toNumber(),
             receivedAt: envelope.receivedAt,
             unidentifiedDeliveryReceived: envelope.unidentifiedDeliveryReceived,
-            message
+            message,
           };
           return this.dispatchAndWait(ev);
         }
@@ -967,7 +969,7 @@ class MessageReceiver extends EventTarget {
   handleLegacyMessage(envelope) {
     return this.decrypt(envelope, envelope.legacyMessage).then(plaintext => {
       if (!plaintext) {
-        debug("handleLegacyMessage: plaintext was falsey");
+        debug('handleLegacyMessage: plaintext was falsey');
         return null;
       }
       return this.innerHandleLegacyMessage(envelope, plaintext);
@@ -982,7 +984,7 @@ class MessageReceiver extends EventTarget {
   handleContentMessage(envelope) {
     return this.decrypt(envelope, envelope.content).then(plaintext => {
       if (!plaintext) {
-        debug("handleContentMessage: plaintext was falsey");
+        debug('handleContentMessage: plaintext was falsey');
         return null;
       }
       return this.innerHandleContentMessage(envelope, plaintext);
@@ -993,49 +995,49 @@ class MessageReceiver extends EventTarget {
     const content = Content.decode(new Uint8Array(plaintext));
     if (content.syncMessage) {
       return this.handleSyncMessage(envelope, content.syncMessage);
-    } else if (content.dataMessage) {
+    } if (content.dataMessage) {
       return this.handleDataMessage(envelope, content.dataMessage);
-    } else if (content.nullMessage) {
+    } if (content.nullMessage) {
       return this.handleNullMessage(envelope, content.nullMessage);
-    } else if (content.callMessage) {
+    } if (content.callMessage) {
       return this.handleCallMessage(envelope, content.callMessage);
-    } else if (content.receiptMessage) {
+    } if (content.receiptMessage) {
       return this.handleReceiptMessage(envelope, content.receiptMessage);
-    } else if (content.typingMessage) {
+    } if (content.typingMessage) {
       return this.handleTypingMessage(envelope, content.typingMessage);
     }
     this.removeFromCache(envelope);
-    throw new Error("Unsupported content message");
+    throw new Error('Unsupported content message');
   }
 
   handleCallMessage(envelope) {
-    debug("call message from", this.getEnvelopeId(envelope));
+    debug('call message from', this.getEnvelopeId(envelope));
     this.removeFromCache(envelope);
   }
 
   handleReceiptMessage(envelope, receiptMessage) {
-    debug("receipt message from", this.getEnvelopeId(envelope));
+    debug('receipt message from', this.getEnvelopeId(envelope));
     const results = [];
     if (receiptMessage.type === ReceiptMessage.Type.DELIVERY) {
       for (let i = 0; i < receiptMessage.timestamp.length; i += 1) {
-        const ev = new Event("delivery");
+        const ev = new Event('delivery');
         ev.confirm = this.removeFromCache.bind(this, envelope);
         ev.deliveryReceipt = {
           timestamp: receiptMessage.timestamp[i].toNumber(),
           source: envelope.source,
           sourceUuid: envelope.sourceUuid,
-          sourceDevice: envelope.sourceDevice
+          sourceDevice: envelope.sourceDevice,
         };
         results.push(this.dispatchAndWait(ev));
       }
     } else if (receiptMessage.type === ReceiptMessage.Type.READ) {
       for (let i = 0; i < receiptMessage.timestamp.length; i += 1) {
-        const ev = new Event("read");
+        const ev = new Event('read');
         ev.confirm = this.removeFromCache.bind(this, envelope);
         ev.timestamp = envelope.timestamp.toNumber();
         ev.read = {
           timestamp: receiptMessage.timestamp[i].toNumber(),
-          reader: envelope.source || envelope.sourceUuid
+          reader: envelope.source || envelope.sourceUuid,
         };
         results.push(this.dispatchAndWait(ev));
       }
@@ -1044,8 +1046,8 @@ class MessageReceiver extends EventTarget {
   }
 
   handleTypingMessage(envelope, typingMessage) {
-    debug("typing message from", this.getEnvelopeId(envelope));
-    const ev = new Event("typing");
+    debug('typing message from', this.getEnvelopeId(envelope));
+    const ev = new Event('typing');
 
     this.removeFromCache(envelope);
 
@@ -1070,45 +1072,43 @@ class MessageReceiver extends EventTarget {
         ? typingMessage.timestamp.toNumber()
         : Date.now(),
       groupId: typingMessage.groupId
-        ? typingMessage.groupId.toString("binary")
+        ? typingMessage.groupId.toString('binary')
         : null,
       started: typingMessage.action === TypingMessage.Action.STARTED,
-      stopped: typingMessage.action === TypingMessage.Action.STOPPED
+      stopped: typingMessage.action === TypingMessage.Action.STOPPED,
     };
 
     return this.dispatchEvent(ev);
   }
 
   handleNullMessage(envelope) {
-    debug("null message from", this.getEnvelopeId(envelope));
+    debug('null message from', this.getEnvelopeId(envelope));
     this.removeFromCache(envelope);
   }
 
   handleSyncMessage(envelope, syncMessage) {
-    debug("sync message from", this.getEnvelopeId(envelope));
+    debug('sync message from', this.getEnvelopeId(envelope));
     const unidentified = syncMessage.sent
       ? syncMessage.sent.unidentifiedStatus || []
       : [];
-    window.normalizeUuids(
+    helpers.normalizeUuids(
       syncMessage,
       [
-        "sent.destinationUuid",
+        'sent.destinationUuid',
         ...unidentified.map(
           (_el, i) => `sent.unidentifiedStatus.${i}.destinationUuid`
-        )
+        ),
       ],
-      "message_receiver::handleSyncMessage"
+      'message_receiver::handleSyncMessage'
     );
-    const fromSelfSource =
-      envelope.source && envelope.source === this.number_id;
-    const fromSelfSourceUuid =
-      envelope.sourceUuid && envelope.sourceUuid === this.uuid_id;
+    const fromSelfSource =      envelope.source && envelope.source === this.number_id;
+    const fromSelfSourceUuid =      envelope.sourceUuid && envelope.sourceUuid === this.uuid_id;
     if (!fromSelfSource && !fromSelfSourceUuid) {
-      throw new Error("Received sync message from another number");
+      throw new Error('Received sync message from another number');
     }
     // eslint-disable-next-line eqeqeq
     if (envelope.sourceDevice == this.deviceId) {
-      throw new Error("Received sync message from our own device");
+      throw new Error('Received sync message from our own device');
     }
     if (syncMessage.sent) {
       const sentMessage = syncMessage.sent;
@@ -1117,57 +1117,57 @@ class MessageReceiver extends EventTarget {
         : sentMessage.destination;
 
       debug(
-        "sent message to",
+        'sent message to',
         to,
         sentMessage.timestamp.toNumber(),
-        "from",
+        'from',
         this.getEnvelopeId(envelope)
       );
       return this.handleSentMessage(envelope, sentMessage);
-    } else if (syncMessage.contacts) {
+    } if (syncMessage.contacts) {
       return this.handleContacts(envelope, syncMessage.contacts);
-    } else if (syncMessage.groups) {
+    } if (syncMessage.groups) {
       return this.handleGroups(envelope, syncMessage.groups);
-    } else if (syncMessage.blocked) {
+    } if (syncMessage.blocked) {
       return this.handleBlocked(envelope, syncMessage.blocked);
-    } else if (syncMessage.request) {
-      debug("Got SyncMessage Request");
+    } if (syncMessage.request) {
+      debug('Got SyncMessage Request');
       return this.removeFromCache(envelope);
-    } else if (syncMessage.read && syncMessage.read.length) {
-      debug("read messages from", this.getEnvelopeId(envelope));
+    } if (syncMessage.read && syncMessage.read.length) {
+      debug('read messages from', this.getEnvelopeId(envelope));
       return this.handleRead(envelope, syncMessage.read);
-    } else if (syncMessage.verified) {
+    } if (syncMessage.verified) {
       return this.handleVerified(envelope, syncMessage.verified);
-    } else if (syncMessage.configuration) {
+    } if (syncMessage.configuration) {
       return this.handleConfiguration(envelope, syncMessage.configuration);
-    } else if (
-      syncMessage.stickerPackOperation &&
-      syncMessage.stickerPackOperation.length > 0
+    } if (
+      syncMessage.stickerPackOperation
+      && syncMessage.stickerPackOperation.length > 0
     ) {
       return this.handleStickerPackOperation(
         envelope,
         syncMessage.stickerPackOperation
       );
-    } else if (syncMessage.viewOnceOpen) {
+    } if (syncMessage.viewOnceOpen) {
       return this.handleViewOnceOpen(envelope, syncMessage.viewOnceOpen);
     }
 
     this.removeFromCache(envelope);
-    throw new Error("Got empty SyncMessage");
+    throw new Error('Got empty SyncMessage');
   }
 
   handleConfiguration(envelope, configuration) {
-    debug("got configuration sync message");
-    const ev = new Event("configuration");
+    debug('got configuration sync message');
+    const ev = new Event('configuration');
     ev.confirm = this.removeFromCache.bind(this, envelope);
     ev.configuration = configuration;
     return this.dispatchAndWait(ev);
   }
 
   handleViewOnceOpen(envelope, sync) {
-    debug("got view once open sync message");
+    debug('got view once open sync message');
 
-    const ev = new Event("viewSync");
+    const ev = new Event('viewSync');
     ev.confirm = this.removeFromCache.bind(this, envelope);
     ev.source = sync.sender;
     ev.sourceUuid = sync.senderUuid;
@@ -1175,8 +1175,8 @@ class MessageReceiver extends EventTarget {
 
     helpers.normalizeUuids(
       ev,
-      ["sourceUuid"],
-      "message_receiver::handleViewOnceOpen"
+      ['sourceUuid'],
+      'message_receiver::handleViewOnceOpen'
     );
 
     return this.dispatchAndWait(ev);
@@ -1184,31 +1184,31 @@ class MessageReceiver extends EventTarget {
 
   handleStickerPackOperation(envelope, operations) {
     const ENUM = SyncMessage.StickerPackOperation.Type;
-    debug("got sticker pack operation sync message");
-    const ev = new Event("sticker-pack");
+    debug('got sticker pack operation sync message');
+    const ev = new Event('sticker-pack');
     ev.confirm = this.removeFromCache.bind(this, envelope);
     ev.stickerPacks = operations.map(operation => ({
-      id: operation.packId ? operation.packId.toString("hex") : null,
-      key: operation.packKey ? operation.packKey.toString("base64") : null,
+      id: operation.packId ? operation.packId.toString('hex') : null,
+      key: operation.packKey ? operation.packKey.toString('base64') : null,
       isInstall: operation.type === ENUM.INSTALL,
-      isRemove: operation.type === ENUM.REMOVE
+      isRemove: operation.type === ENUM.REMOVE,
     }));
     return this.dispatchAndWait(ev);
   }
 
   handleVerified(envelope, verified) {
-    const ev = new Event("verified");
+    const ev = new Event('verified');
     ev.confirm = this.removeFromCache.bind(this, envelope);
     ev.verified = {
       state: verified.state,
       destination: verified.destination,
       destinationUuid: verified.destinationUuid,
-      identityKey: verified.identityKey.toArrayBuffer()
+      identityKey: verified.identityKey.toArrayBuffer(),
     };
     helpers.normalizeUuids(
       ev,
-      ["verified.destinationUuid"],
-      "message_receiver::handleVerified"
+      ['verified.destinationUuid'],
+      'message_receiver::handleVerified'
     );
 
     return this.dispatchAndWait(ev);
@@ -1217,18 +1217,18 @@ class MessageReceiver extends EventTarget {
   handleRead(envelope, read) {
     const results = [];
     for (let i = 0; i < read.length; i += 1) {
-      const ev = new Event("readSync");
+      const ev = new Event('readSync');
       ev.confirm = this.removeFromCache.bind(this, envelope);
       ev.timestamp = envelope.timestamp.toNumber();
       ev.read = {
         timestamp: read[i].timestamp.toNumber(),
         sender: read[i].sender,
-        senderUuid: read[i].senderUuid
+        senderUuid: read[i].senderUuid,
       };
       helpers.normalizeUuids(
         ev,
-        ["read.senderUuid"],
-        "message_receiver::handleRead"
+        ['read.senderUuid'],
+        'message_receiver::handleRead'
       );
       results.push(this.dispatchAndWait(ev));
     }
@@ -1236,7 +1236,7 @@ class MessageReceiver extends EventTarget {
   }
 
   handleContacts(envelope, contacts) {
-    debug("contact sync");
+    debug('contact sync');
     const { blob } = contacts;
 
     this.removeFromCache(envelope);
@@ -1248,24 +1248,24 @@ class MessageReceiver extends EventTarget {
       const contactBuffer = new ContactBuffer(attachmentPointer.data);
       let contactDetails = contactBuffer.next();
       while (contactDetails !== undefined) {
-        const ev = new Event("contact");
+        const ev = new Event('contact');
         ev.contactDetails = contactDetails;
         results.push(this.dispatchAndWait(ev));
 
         contactDetails = contactBuffer.next();
       }
 
-      const ev = new Event("contactsync");
+      const ev = new Event('contactsync');
       results.push(this.dispatchAndWait(ev));
 
       return Promise.all(results).then(() => {
-        debug("handleContacts: finished");
+        debug('handleContacts: finished');
       });
     });
   }
 
   handleGroups(envelope, groups) {
-    debug("group sync");
+    debug('group sync');
     const { blob } = groups;
 
     this.removeFromCache(envelope);
@@ -1278,55 +1278,38 @@ class MessageReceiver extends EventTarget {
       const promises = [];
       while (groupDetails !== undefined) {
         groupDetails.id = groupDetails.id.toBinary();
-        if (groupDetails.active) {
-          if (this.store.hasGroups()) {
-            this.store.getGroup(groupDetails.id).then(existingGroup => {
-              if (existingGroup === undefined) {
-                return this.store.createNewGroup(
-                  groupDetails.members,
-                  groupDetails.id
-                );
-              } else {
-                return this.store.updateGroupNumbers(
-                  groupDetails.id,
-                  groupDetails.members
-                );
-              }
-            });
-          }
-          const ev = new Event("group");
+          const ev = new Event('group');
           ev.groupDetails = groupDetails;
           const promise = this.dispatchAndWait(ev).catch(e => {
-            debug("error processing group", e);
+            debug('error processing group', e);
           });
           groupDetails = groupBuffer.next();
           promises.push(promise);
-        }
       }
 
       Promise.all(promises).then(() => {
-        const ev = new Event("groupsync");
+        const ev = new Event('groupsync');
         return this.dispatchAndWait(ev);
       });
     });
   }
 
   async handleBlocked(envelope, blocked) {
-    debug("Setting these numbers as blocked:", blocked.numbers);
+    debug('Setting these numbers as blocked:', blocked.numbers);
     await this.store.setBlocked(blocked.numbers);
     if (blocked.uuids) {
       helpers.normalizeUuids(
         blocked,
         blocked.uuids.map((_uuid, i) => `uuids.${i}`),
-        "message_receiver::handleBlocked"
+        'message_receiver::handleBlocked'
       );
-      debug("Setting these uuids as blocked:", blocked.uuids);
+      debug('Setting these uuids as blocked:', blocked.uuids);
       this.store.setBlockedUuids(blocked.uuids);
     }
 
     const groupIds = _.map(blocked.groupIds, groupId => groupId.toBinary());
     debug(
-      "Setting these groups as blocked:",
+      'Setting these groups as blocked:',
       groupIds.map(groupId => `group(${groupId})`)
     );
     await this.store.setBlockedGroups(groupIds);
@@ -1339,6 +1322,11 @@ class MessageReceiver extends EventTarget {
     return blocklist.includes(number);
   }
 
+  async isUuidBlocked(uuid) {
+    const blocklist = await this.store.getBlockedUuids();
+    return blocklist.includes(uuid);
+  }
+
   async isGroupBlocked(groupId) {
     const blocklist = await this.store.getBlockedGroups();
     return blocklist.includes(groupId);
@@ -1346,14 +1334,14 @@ class MessageReceiver extends EventTarget {
 
   cleanAttachment(attachment) {
     return {
-      ..._.omit(attachment, "thumbnail"),
+      ..._.omit(attachment, 'thumbnail'),
       id: attachment.id.toString(),
       key: attachment.key
-        ? ByteBuffer.wrap(attachment.key, "base64").toString("base64")
+        ? ByteBuffer.wrap(attachment.key, 'base64').toString('base64')
         : null,
       digest: attachment.digest
-        ? ByteBuffer.wrap(attachment.digest, "base64").toString("base64")
-        : null
+        ? ByteBuffer.wrap(attachment.digest, 'base64').toString('base64')
+        : null,
     };
   }
 
@@ -1362,7 +1350,7 @@ class MessageReceiver extends EventTarget {
     const { key, digest, size } = attachment;
 
     if (!digest) {
-      throw new Error("Failure: Ask sender to update Signal and resend.");
+      throw new Error('Failure: Ask sender to update Signal and resend.');
     }
 
     const data = await crypto.decryptAttachment(
@@ -1380,8 +1368,8 @@ class MessageReceiver extends EventTarget {
     const typedArray = crypto.getFirstBytes(data, size);
 
     return {
-      ..._.omit(attachment, "digest", "key"),
-      data: crypto.typedArrayToArrayBuffer(typedArray)
+      ..._.omit(attachment, 'digest', 'key'),
+      data: crypto.typedArrayToArrayBuffer(typedArray),
     };
   }
 
@@ -1391,7 +1379,7 @@ class MessageReceiver extends EventTarget {
   }
 
   async handleEndSession(identifier) {
-    debug("got end session");
+    debug('got end session');
     const deviceIds = await this.store.getDeviceIds(identifier);
 
     return Promise.all(
@@ -1402,7 +1390,7 @@ class MessageReceiver extends EventTarget {
         );
         const sessionCipher = new libsignal.SessionCipher(this.store, address);
 
-        debug("deleting sessions for", address.toString());
+        debug('deleting sessions for', address.toString());
         return sessionCipher.deleteAllSessionsForDevice();
       })
     );
@@ -1418,7 +1406,7 @@ class MessageReceiver extends EventTarget {
     //   fields after the first action.
 
     if (!envelope.timestamp || !decrypted.timestamp) {
-      throw new Error("Missing timestamp on dataMessage or envelope");
+      throw new Error('Missing timestamp on dataMessage or envelope');
     }
 
     const envelopeTimestamp = envelope.timestamp.toNumber();
@@ -1442,26 +1430,26 @@ class MessageReceiver extends EventTarget {
       decrypted.attachments = [];
       decrypted.group = null;
       return Promise.resolve(decrypted);
-    } else if (decrypted.flags & FLAGS.EXPIRATION_TIMER_UPDATE) {
+    } if (decrypted.flags & FLAGS.EXPIRATION_TIMER_UPDATE) {
       decrypted.body = null;
       decrypted.attachments = [];
     } else if (decrypted.flags & FLAGS.PROFILE_KEY_UPDATE) {
       decrypted.body = null;
       decrypted.attachments = [];
     } else if (decrypted.flags !== 0) {
-      throw new Error("Unknown flags in message");
+      throw new Error('Unknown flags in message');
     }
 
     if (decrypted.group !== null) {
       decrypted.group.id = ByteBuffer.wrap(decrypted.group.id).toBinary();
 
-      var existingGroup = [];
+      let existingGroup = [];
       if (this.store.hasGroups()) {
         existingGroup = await this.store.getGroupNumbers(decrypted.group.id);
         if (existingGroup === undefined) {
           if (decrypted.group.type !== GroupContext.Type.UPDATE) {
             decrypted.group.members = [source];
-            debug("Got message for unknown group");
+            debug('Got message for unknown group');
           }
           this.store.createNewGroup(
             decrypted.group.id,
@@ -1473,7 +1461,7 @@ class MessageReceiver extends EventTarget {
           if (fromIndex < 0) {
             // TODO: This could be indication of a race...
             debug(
-              "Sender was not a member of the group they were sending from"
+              'Sender was not a member of the group they were sending from'
             );
           }
         }
@@ -1507,7 +1495,7 @@ class MessageReceiver extends EventTarget {
             break;
           default: {
             this.removeFromCache(envelope);
-            const err = new Error("Unknown group message type");
+            const err = new Error('Unknown group message type');
             err.warn = true;
             throw err;
           }
@@ -1543,7 +1531,7 @@ class MessageReceiver extends EventTarget {
 
       return {
         ...item,
-        image: this.cleanAttachment(image)
+        image: this.cleanAttachment(image),
       };
     });
     decrypted.contact = (decrypted.contact || []).map(item => {
@@ -1557,8 +1545,8 @@ class MessageReceiver extends EventTarget {
         ...item,
         avatar: {
           ...item.avatar,
-          avatar: this.cleanAttachment(item.avatar.avatar)
-        }
+          avatar: this.cleanAttachment(item.avatar.avatar),
+        },
       };
     });
 
@@ -1577,7 +1565,7 @@ class MessageReceiver extends EventTarget {
 
           return {
             ...item,
-            thumbnail: this.cleanAttachment(item.thumbnail)
+            thumbnail: this.cleanAttachment(item.thumbnail),
           };
         }
       );
@@ -1586,10 +1574,10 @@ class MessageReceiver extends EventTarget {
     const { sticker } = decrypted;
     if (sticker) {
       if (sticker.packId) {
-        sticker.packId = sticker.packId.toString("hex");
+        sticker.packId = sticker.packId.toString('hex');
       }
       if (sticker.packKey) {
-        sticker.packKey = sticker.packKey.toString("base64");
+        sticker.packKey = sticker.packKey.toString('base64');
       }
       if (sticker.data) {
         sticker.data = this.cleanAttachment(sticker.data);
@@ -1601,35 +1589,35 @@ class MessageReceiver extends EventTarget {
     helpers.normalizeUuids(
       decrypted,
       [
-        "quote.authorUuid",
-        "reaction.targetAuthorUuid",
-        ...groupMembers.map((_member, i) => `group.members.${i}.uuid`)
+        'quote.authorUuid',
+        'reaction.targetAuthorUuid',
+        ...groupMembers.map((_member, i) => `group.members.${i}.uuid`),
       ],
-      "message_receiver::processDecrypted"
+      'message_receiver::processDecrypted'
     );
 
     return Promise.resolve(decrypted);
     /* eslint-enable no-bitwise, no-param-reassign */
   }
 
-  stringToArrayBuffer(string) {
-    Promise.resolve(ByteBuffer.wrap(string, "binary").toArrayBuffer());
+  static stringToArrayBuffer(string) {
+    Promise.resolve(ByteBuffer.wrap(string, 'binary').toArrayBuffer());
   }
 
-  arrayBufferToString(arrayBuffer) {
-    Promise.resolve(ByteBuffer.wrap(arrayBuffer).toString("binary"));
+  static arrayBufferToString(arrayBuffer) {
+    Promise.resolve(ByteBuffer.wrap(arrayBuffer).toString('binary'));
   }
 
-  stringToArrayBufferBase64(string) {
+  static stringToArrayBufferBase64(string) {
     // TODO: port to worker_threads since can't pass arrayBuffers to nodejs processes
-    //callWorker("stringToArrayBufferBase64", string);
-    return ByteBuffer.wrap(string, "base64").toArrayBuffer();
+    // callWorker("stringToArrayBufferBase64", string);
+    return ByteBuffer.wrap(string, 'base64').toArrayBuffer();
   }
 
-  arrayBufferToStringBase64(arrayBuffer) {
+  static arrayBufferToStringBase64(arrayBuffer) {
     // TODO: port to worker_threads since can't pass arrayBuffers to nodejs processes
-    //callWorker("arrayBufferToStringBase64", arrayBuffer);
-    return ByteBuffer.wrap(new Uint8Array(arrayBuffer)).toString("base64");
+    // callWorker("arrayBufferToStringBase64", arrayBuffer);
+    return ByteBuffer.wrap(new Uint8Array(arrayBuffer)).toString('base64');
   }
 }
 
