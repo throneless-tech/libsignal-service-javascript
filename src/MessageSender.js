@@ -106,7 +106,7 @@ class MessageSender {
     const id = await this.server.putAttachment(result.ciphertext);
 
     const proto = AttachmentPointer.create();
-    proto.id = id;
+    proto.cdnId = id;
     proto.contentType = attachment.contentType;
     proto.key = new Uint8Array(key);
     proto.size = attachment.size;

@@ -420,7 +420,7 @@ module.exports = {
 // We first set up the data that won't change during this session of the app
 function initialize({
   url,
-  cdnUrl,
+  cdnUrlObject,
   certificateAuthority,
   contentProxyUrl,
   proxyUrl,
@@ -429,8 +429,14 @@ function initialize({
   if (!is.string(url)) {
     throw new Error('WebAPI.initialize: Invalid server url');
   }
-  if (!is.string(cdnUrl)) {
-    throw new Error('WebAPI.initialize: Invalid cdnUrl');
+  if (!is.object(cdnUrlObject)) {
+    throw new Error('WebAPI.initialize: Invalid cdnUrlObject');
+  }
+  if (!is.string(cdnUrlObject['0'])) {
+    throw new Error('WebAPI.initialize: Missing CDN 0 configuration');
+  }
+  if (!is.string(cdnUrlObject['2'])) {
+    throw new Error('WebAPI.initialize: Missing CDN 2 configuration');
   }
   if (!is.string(certificateAuthority)) {
     throw new Error('WebAPI.initialize: Invalid certificateAuthority');
@@ -600,7 +606,7 @@ function initialize({
     function getAvatar(path) {
       // Using _outerAJAX, since it's not hardcoded to the Signal Server. Unlike our
       //   attachment CDN, it uses our self-signed certificate, so we pass it in.
-      return _outerAjax(`${cdnUrl}/${path}`, {
+      return _outerAjax(`${cdnUrlObject['0']}/${path}`, {
         certificateAuthority,
         contentType: 'application/octet-stream',
         proxyUrl,
@@ -880,7 +886,7 @@ function initialize({
     }
 
     function getSticker(packId, stickerId) {
-      return _outerAjax(`${cdnUrl}/stickers/${packId}/full/${stickerId}`, {
+      return _outerAjax(`${cdnUrlObject['0']}/stickers/${packId}/full/${stickerId}`, {
         certificateAuthority,
         proxyUrl,
         responseType: 'arraybuffer',
@@ -891,7 +897,7 @@ function initialize({
     }
 
     function getStickerPackManifest(packId) {
-      return _outerAjax(`${cdnUrl}/stickers/${packId}/manifest.proto`, {
+      return _outerAjax(`${cdnUrlObject['0']}/stickers/${packId}/manifest.proto`, {
         certificateAuthority,
         proxyUrl,
         responseType: 'arraybuffer',
@@ -967,7 +973,7 @@ function initialize({
       // Upload manifest
       const manifestParams = makePutParams(manifest, encryptedManifest);
       // This is going to the CDN, not the service, so we use _outerAjax
-      await _outerAjax(`${cdnUrl}/`, {
+      await _outerAjax(`${cdnUrlObject['0']}/`, {
         ...manifestParams,
         certificateAuthority,
         proxyUrl,
@@ -983,7 +989,7 @@ function initialize({
         stickers.map(async (s, id) => {
           const stickerParams = makePutParams(s, encryptedStickers[id]);
           await queue.add(async () =>
-            _outerAjax(`${cdnUrl}/`, {
+            _outerAjax(`${cdnUrlObject['0']}/`, {
               ...stickerParams,
               certificateAuthority,
               proxyUrl,
@@ -1003,9 +1009,10 @@ function initialize({
       return packId;
     }
 
-    async function getAttachment(id) {
+    async function getAttachment(cdnKey, cdnNumber) {
+      const cdnUrl = cdnUrlObject[cdnNumber] || cdnUrlObject['0'];
       // This is going to the CDN, not the service, so we use _outerAjax
-      return _outerAjax(`${cdnUrl}/attachments/${id}`, {
+      return _outerAjax(`${cdnUrl}/attachments/${cdnKey}`, {
         certificateAuthority,
         proxyUrl,
         responseType: 'arraybuffer',
@@ -1027,7 +1034,7 @@ function initialize({
       const params = makePutParams(response, encryptedBin);
 
       // This is going to the CDN, not the service, so we use _outerAjax
-      await _outerAjax(`${cdnUrl}/attachments/`, {
+      await _outerAjax(`${cdnUrlObject['0']}/attachments/`, {
         ...params,
         certificateAuthority,
         proxyUrl,

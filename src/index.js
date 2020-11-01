@@ -16,9 +16,14 @@ let proxyUrl;
 if (config.has('proxyUrl')) {
   proxyUrl = config.get('proxyUrl');
 }
+const cdnUrl0 = config.get('cdn').get('0');
+const cdnUrl2 = config.get('cdn').get('2');
 const WebAPI = require('./WebAPI.js').initialize({
   url: config.get('serverUrl'),
-  cdnUrl: config.get('cdnUrl'),
+  cdnUrlObject: {
+    '0': cdnUrl0,
+    '2': cdnUrl2,
+  },
   certificateAuthority: config.get('certificateAuthority'),
   contentProxyUrl: config.get('contentProxyUrl'),
   proxyUrl,

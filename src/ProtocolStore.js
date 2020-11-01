@@ -163,7 +163,7 @@ class ProtocolStore {
     });
   }
 
-  async _saveToCache(cache, id, value) {
+  _saveToCache(cache, id, value) {
     return new Promise((resolve, reject) => {
       if (this.status === CacheStatus.HYDRATED) {
         resolve((this[cache][id] = value));
@@ -316,7 +316,10 @@ class ProtocolStore {
       throw new Error('Tried to get session for undefined/null number');
     }
 
+    debug('loadSession() => encodedNumber:', encodedNumber);
+    debug('loadSession() => this.sessions', this.sessions);
     const session = await this._getFromCache('sessions', encodedNumber);
+    debug('loadSession() => session:', session);
     if (session) {
       return session.record;
     }

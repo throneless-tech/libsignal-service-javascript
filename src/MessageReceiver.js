@@ -1335,7 +1335,7 @@ class MessageReceiver extends EventTarget {
   cleanAttachment(attachment) {
     return {
       ..._.omit(attachment, 'thumbnail'),
-      id: attachment.id.toString(),
+      cdnId: attachment.cdnId ? attachment.cdnId.toString() : undefined,
       key: attachment.key
         ? ByteBuffer.wrap(attachment.key, 'base64').toString('base64')
         : null,
@@ -1346,7 +1346,11 @@ class MessageReceiver extends EventTarget {
   }
 
   async downloadAttachment(attachment) {
-    const encrypted = await this.server.getAttachment(attachment.id);
+    const cdnId = attachment.cdnId && attachment.cdnId !== '0' ? attachment.cdnId : attachment.cdnKey;
+    const encrypted = await this.server.getAttachment(
+      cdnId,
+      attachment.cdnNumber || '0'
+    );
     const { key, digest, size } = attachment;
 
     if (!digest) {
