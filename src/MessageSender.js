@@ -1144,7 +1144,7 @@ class MessageSender {
     }
 
     const myE164 = await this.store.getNumber();
-    const myUuid = await this.store.getNumber();
+    const myUuid = await this.store.getUuid();
     const attrs = {
       recipients: recipients.filter(r => r !== myE164 && r !== myUuid),
       body,
