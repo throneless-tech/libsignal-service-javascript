@@ -528,7 +528,8 @@ class MessageReceiver extends EventTarget {
   }
 
   async cacheRemoveBatch(items) {
-    await this.store.removeUnprocessed(items);
+    const removed = items.map(item => this.store.removeUnprocessed(item.id));
+    return Promise.all(removed);
   }
 
   removeFromCache(envelope) {
