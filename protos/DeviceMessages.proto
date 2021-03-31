@@ -1,4 +1,3 @@
-package signalservice;
 
 message ProvisioningUuid {
  optional string uuid = 1;

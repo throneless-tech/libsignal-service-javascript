@@ -1,0 +1,3 @@
+[submodule "vendor/Signal-Desktop"]
+	path = vendor/Signal-Desktop
+	url = git@github.com:signalapp/Signal-Desktop.git

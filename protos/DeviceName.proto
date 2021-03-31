@@ -1,4 +1,3 @@
-package signalservice;
 
 message DeviceName {
   optional bytes ephemeralPublic = 1;

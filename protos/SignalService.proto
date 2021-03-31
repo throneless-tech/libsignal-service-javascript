@@ -1,5 +1,4 @@
 // Source: https://github.com/signalapp/libsignal-service-java/blob/4684a49b2ed8f32be619e0d0eea423626b6cb2cb/protobuf/SignalService.proto
-package signalservice;
 
 option java_package = "org.whispersystems.signalservice.internal.push";
 option java_outer_classname = "SignalServiceProtos";
@@ -24,50 +23,82 @@ message Envelope {
   optional bytes  content         = 8; // Contains an encrypted Content
   optional string serverGuid      = 9;
   optional uint64 serverTimestamp = 10;
-
 }
 
 message Content {
   optional DataMessage    dataMessage    = 1;
   optional SyncMessage    syncMessage    = 2;
-  optional CallMessage    callMessage    = 3;
+  optional CallingMessage callingMessage = 3;
   optional NullMessage    nullMessage    = 4;
   optional ReceiptMessage receiptMessage = 5;
   optional TypingMessage  typingMessage  = 6;
 }
 
-message CallMessage {
+// Everything in CallingMessage must be kept in sync with RingRTC (ringrtc-node).
+// Whenever you change this, make sure you change textsecure.d.ts and RingRTC.
+message CallingMessage {
   message Offer {
-    optional uint64 id          = 1;
-    optional string description = 2;
+    enum Type {
+      OFFER_AUDIO_CALL = 0;
+      OFFER_VIDEO_CALL = 1;
+    }
+
+    optional uint64 callId = 1;
+    // Legacy/deprecated; replaced by 'opaque'
+    optional string sdp    = 2;
+    optional Type   type   = 3;
+    optional bytes  opaque = 4;
   }
 
   message Answer {
-    optional uint64 id          = 1;
-    optional string description = 2;
+    optional uint64 callId = 1;
+    // Legacy/deprecated; replaced by 'opaque'
+    optional string sdp    = 2;
+    optional bytes  opaque = 3;
   }
 
-  message IceUpdate {
-    optional uint64 id            = 1;
-    optional string sdpMid        = 2;
-    optional uint32 sdpMLineIndex = 3;
-    optional string sdp           = 4;
+  message IceCandidate {
+    optional uint64 callId = 1;
+    // Legacy/deprecated; remove when old clients are gone.
+    optional string mid    = 2;
+    // Legacy/deprecated; remove when old clients are gone.
+    optional uint32 line   = 3;
+    // Legacy/deprecated; replaced by 'opaque'
+    optional string sdp    = 4;
+    optional bytes  opaque = 5;
   }
 
   message Busy {
-    optional uint64 id = 1;
+    optional uint64 callId = 1;
   }
 
   message Hangup {
-    optional uint64 id = 1;
+    enum Type {
+      HANGUP_NORMAL          = 0;
+      HANGUP_ACCEPTED        = 1;
+      HANGUP_DECLINED        = 2;
+      HANGUP_BUSY            = 3;
+      HANGUP_NEED_PERMISSION = 4;
+    }
+
+    optional uint64 callId   = 1;
+    optional Type   type     = 2;
+    optional uint32 deviceId = 3;
   }
 
+  message Opaque {
+    optional bytes data = 1;
+  }
 
-  optional Offer     offer     = 1;
-  optional Answer    answer    = 2;
-  repeated IceUpdate iceUpdate = 3;
-  optional Hangup    hangup    = 4;
-  optional Busy      busy      = 5;
+  optional Offer        offer               = 1;
+  optional Answer       answer              = 2;
+  repeated IceCandidate iceCandidates       = 3;
+  optional Hangup       legacyHangup        = 4;
+  optional Busy         busy                = 5;
+  optional Hangup       hangup              = 7;
+  optional bool         supportsMultiRing   = 8;
+  optional uint32       destinationDeviceId = 9;
+  optional Opaque       opaque              = 10;
 }
 
 message DataMessage {
@@ -89,6 +120,7 @@ message DataMessage {
     optional string           authorUuid  = 5;
     optional string           text        = 3;
     repeated QuotedAttachment attachments = 4;
+    repeated BodyRange        bodyRanges  = 6;
   }
 
   message Contact {
@@ -162,13 +194,15 @@ message DataMessage {
     optional string            url   = 1;
     optional string            title = 2;
     optional AttachmentPointer image = 3;
+    optional string            description = 4;
+    optional uint64            date        = 5;
   }
 
   message Sticker {
-    optional bytes packId           = 1;
-    optional bytes packKey          = 2;
-    optional uint32 stickerId       = 3;
-    optional AttachmentPointer data = 4;
+    optional bytes             packId    = 1;
+    optional bytes             packKey   = 2;
+    optional uint32            stickerId = 3;
+    optional AttachmentPointer data      = 4;
   }
 
   message Reaction {
@@ -177,6 +211,23 @@ message DataMessage {
     optional string targetAuthorE164 = 3;
     optional string targetAuthorUuid = 4;
     optional uint64 targetTimestamp  = 5;
+  }
+
+  message Delete {
+    optional uint64 targetSentTimestamp = 1;
+  }
+
+  message BodyRange {
+    optional uint32 start  = 1;
+    optional uint32 length = 2;
+
+    // oneof associatedValue {
+      optional string mentionUuid = 3;
+    //}
+  }
+
+  message GroupCallUpdate {
+    optional string eraId = 1;
   }
 
   enum ProtocolVersion {
@@ -188,7 +239,8 @@ message DataMessage {
     VIEW_ONCE_VIDEO          = 3;
     REACTIONS                = 4;
     CDN_SELECTOR_ATTACHMENTS = 5;
-    CURRENT                  = 5;
+    MENTIONS                 = 6;
+    CURRENT                  = 6;
   }
 
   optional string             body                    = 1;
@@ -206,6 +258,9 @@ message DataMessage {
   optional uint32             requiredProtocolVersion = 12;
   optional bool               isViewOnce              = 14;
   optional Reaction           reaction                = 16;
+  optional Delete             delete                  = 17;
+  repeated BodyRange          bodyRanges              = 18;
+  optional GroupCallUpdate    groupCallUpdate         = 19;
 }
 
 message NullMessage {
@@ -274,9 +329,9 @@ message SyncMessage {
   }
 
   message Blocked {
-    repeated string numbers = 1;
-    repeated string uuids   = 3;
-    repeated bytes groupIds = 2;
+    repeated string numbers  = 1;
+    repeated string uuids    = 3;
+    repeated bytes  groupIds = 2;
   }
 
   message Request {
@@ -286,9 +341,14 @@ message SyncMessage {
       GROUPS        = 2;
       BLOCKED       = 3;
       CONFIGURATION = 4;
+      KEYS          = 5;
     }
 
     optional Type type = 1;
+  }
+
+  message Keys {
+    optional bytes storageService = 1;
   }
 
   message Read {
@@ -298,10 +358,12 @@ message SyncMessage {
   }
 
   message Configuration {
-    optional bool readReceipts                   = 1;
-    optional bool unidentifiedDeliveryIndicators = 2;
-    optional bool typingIndicators               = 3;
-    optional bool linkPreviews                   = 4;
+    optional bool   readReceipts                   = 1;
+    optional bool   unidentifiedDeliveryIndicators = 2;
+    optional bool   typingIndicators               = 3;
+    // 4 is reserved
+    optional uint32 provisioningVersion            = 5;
+    optional bool   linkPreviews                   = 6;
   }
 
   message StickerPackOperation {
@@ -309,6 +371,7 @@ message SyncMessage {
       INSTALL = 0;
       REMOVE  = 1;
     }
+
     optional bytes packId  = 1;
     optional bytes packKey = 2;
     optional Type  type    = 3;
@@ -320,17 +383,45 @@ message SyncMessage {
     optional uint64 timestamp  = 2;
   }
 
-  optional Sent                 sent                 = 1;
-  optional Contacts             contacts             = 2;
-  optional Groups               groups               = 3;
-  optional Request              request              = 4;
-  repeated Read                 read                 = 5;
-  optional Blocked              blocked              = 6;
-  optional Verified             verified             = 7;
-  optional Configuration        configuration        = 9;
-  optional bytes                padding              = 8;
-  repeated StickerPackOperation stickerPackOperation = 10;
-  optional ViewOnceOpen         viewOnceOpen         = 11;
+  message MessageRequestResponse {
+    enum Type {
+      UNKNOWN          = 0;
+      ACCEPT           = 1;
+      DELETE           = 2;
+      BLOCK            = 3;
+      BLOCK_AND_DELETE = 4;
+    }
+
+    optional string threadE164 = 1;
+    optional string threadUuid = 2;
+    optional bytes  groupId    = 3;
+    optional Type   type       = 4;
+  }
+
+  message FetchLatest {
+    enum Type {
+      UNKNOWN          = 0;
+      LOCAL_PROFILE    = 1;
+      STORAGE_MANIFEST = 2;
+    }
+
+    optional Type type = 1;
+  }
+
+  optional Sent                   sent                   = 1;
+  optional Contacts               contacts               = 2;
+  optional Groups                 groups                 = 3;
+  optional Request                request                = 4;
+  repeated Read                   read                   = 5;
+  optional Blocked                blocked                = 6;
+  optional Verified               verified               = 7;
+  optional Configuration          configuration          = 9;
+  optional bytes                  padding                = 8;
+  repeated StickerPackOperation   stickerPackOperation   = 10;
+  optional ViewOnceOpen           viewOnceOpen           = 11;
+  optional FetchLatest            fetchLatest            = 12;
+  optional Keys                   keys                   = 13;
+  optional MessageRequestResponse messageRequestResponse = 14;
 }
 
 message AttachmentPointer {
@@ -367,16 +458,11 @@ message GroupContext {
     REQUEST_INFO = 4;
   }
 
-  message Member {
-    optional string uuid = 1;
-    optional string e164 = 2;
-  }
-
   optional bytes             id          = 1;
   optional Type              type        = 2;
   optional string            name        = 3;
   repeated string            membersE164 = 4;
-  repeated Member            members     = 6;
+  // field 6 was removed; do not use
   optional AttachmentPointer avatar      = 5;
 }
 

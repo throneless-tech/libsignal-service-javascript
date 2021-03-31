@@ -37,16 +37,21 @@
  *
  */
 
-const Signal = require('../src/index.js');
-const Storage = require('./LocalSignalProtocolStore.js');
+// import { initStorage, AccountManager, MessageReceiver, MessageSender } from '../dist/libsignal-service.js';
+// import * as Signal from '../dist/libsignal-service.js';
 
-const protocolStore = new Signal.ProtocolStore(new Storage(process.env.STORE));
-protocolStore.load();
+
+
+// protocolStore.load();
 const ByteBuffer = require('bytebuffer');
 const fs = require('fs');
 const path = require('path');
+const Storage = require('./LocalSignalProtocolStore.js');
+const Signal = require('../dist/libsignal-service.js');
 
 const args = process.argv.slice(2);
+
+console.log('***args***:', args);
 
 function printError(error) {
   console.log(error);
@@ -62,22 +67,22 @@ let accountManager;
   let text;
   let expire;
 
+Signal.initStorage(new Storage(process.env.STORE)).then(() => {
 switch (args[0]) {
   case 'request':
   case 'requestSMS':
     username = args[1];
     password = args[2];
+    captchaToken = args[3];
     accountManager = new Signal.AccountManager(
       username,
-      password,
-      protocolStore
+      password
     );
 
     accountManager
-      .requestSMSVerification()
+      .requestSMSVerification(username, captchaToken)
       .then(result => {
         console.log('Sent verification code.');
-        
       })
       .catch(printError);
     break;
@@ -86,12 +91,11 @@ switch (args[0]) {
     password = args[2];
     accountManager = new Signal.AccountManager(
       username,
-      password,
-      protocolStore
+      password
     );
 
     accountManager
-      .requestVoiceVerification()
+      .requestVoiceVerification(username, captchaToken)
       .then(result => {
         console.log('Calling for verification.');
         
@@ -102,14 +106,14 @@ switch (args[0]) {
     username = args[1];
     password = args[2];
     const code = args[3];
+    console.log('***code***:', code);
     accountManager = new Signal.AccountManager(
       username,
-      password,
-      protocolStore
+      password
     );
 
     accountManager
-      .registerSingleDevice(code)
+      .registerSingleDevice(username, code)
       .then(result => {
         console.log(result);
       })
@@ -119,7 +123,7 @@ switch (args[0]) {
     number = args[1];
     text = args[2];
     attachments = [];
-    messageSender = new Signal.MessageSender(protocolStore);
+    messageSender = new Signal.MessageSender();
     messageSender.connect().then(() => {
       if (args[3]) {
         Signal.AttachmentHelper.loadFile(args[3])
@@ -157,7 +161,7 @@ switch (args[0]) {
     numbers = args[2].split(',');
     text = args[3];
     attachments = [];
-    messageSender = new Signal.MessageSender(protocolStore);
+    messageSender = new Signal.MessageSender();
     messageSender.connect().then(() => {
       if (args[4]) {
         Signal.AttachmentHelper.loadFile(args[4])
@@ -194,7 +198,7 @@ switch (args[0]) {
   case 'expire':
     number = args[1];
     expire = args[2];
-    messageSender = new Signal.MessageSender(protocolStore);
+    messageSender = new Signal.MessageSender();
     messageSender.connect().then(() => {
       messageSender
         .sendExpirationTimerUpdateToNumber(number, parseInt(expire))
@@ -207,7 +211,7 @@ switch (args[0]) {
   case 'createGroup':
     name = args[1];
     numbers = args[2];
-    messageSender = new Signal.MessageSender(protocolStore);
+    messageSender = new Signal.MessageSender();
     messageSender.connect().then(() => {
       groupId = Signal.KeyHelper.generateGroupId();
       messageSender
@@ -221,7 +225,7 @@ switch (args[0]) {
   case 'leaveGroup':
     groupId = args[1];
     numbers = args[2].split(',');
-    messageSender = new Signal.MessageSender(protocolStore);
+    messageSender = new Signal.MessageSender();
     messageSender.connect().then(() => {
       messageSender
         .leaveGroup(groupId, numbers)
@@ -233,7 +237,7 @@ switch (args[0]) {
     });
     break;
   case 'receive':
-    const messageReceiver = new Signal.MessageReceiver(protocolStore);
+    const messageReceiver = new Signal.MessageReceiver();
     messageReceiver.connect().then(() => {
       messageReceiver.addEventListener('message', ev => {
         console.log('*** EVENT ***:', ev);
@@ -319,3 +323,4 @@ switch (args[0]) {
     console.log('No valid command specified.');
     break;
 }
+});
