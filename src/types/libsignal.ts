@@ -10,6 +10,7 @@ import {
   UnprocessedType,
 } from '../../lib/ts/textsecure.d';
 
+import { ConversationModel } from '../Conversation';
 import { StorageProtocolType } from './textsecure';
 
 // re-declared from upstream libsignal.d.ts
@@ -109,6 +110,14 @@ export type StorageType = {
   removeUnprocessed: (id: string | Array<string>) => Promise<void>;
   removeAllUnprocessed: () => Promise<void>;
   getAllUnprocessed: () => Promise<Array<UnprocessedType>>;
+
+  // Conversations
+  createOrUpdateConversation: (data: ConversationModel) => Promise<void>;
+  getConversationsByMember: (memberId: string) => Promise<Array<ConversationModel>>;
+  removeConversationById: (id: string) => Promise<void>;
+  removeAllConversations: () => Promise<void>;
+  getAllConversations: () => Promise<Array<ConversationModel>>;
+
 }
 
 // re-declared from upstream libsignal.d.ts

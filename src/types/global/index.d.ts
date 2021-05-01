@@ -24,7 +24,8 @@ declare global {
         fromString: typeof fromString;
       };
     };
-    isValidGuid: any;
+    isValidGuid: (maybe: string) => boolean;
+    isValidE164: (maybe: string) => boolean;
     libphonenumber: any;
     libsignal: LibSignalType;
     log: {

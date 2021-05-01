@@ -21,9 +21,10 @@ import * as log from './shims/log';
 import * as protobuf from './js/ProtobufWrapper';
 
 // other implementations
-import { Storage, StorageImpl, StorageUser, StorageUnprocessed } from './StorageWrapper';
+import { Storage, StorageImpl, StorageConversations, StorageUser, StorageUnprocessed } from './StorageWrapper';
 import { SignalProtocolStore } from './LibSignalStore';
 import { AccountManager } from './AccountManager';
+import { ConversationController } from './ConversationController';
 
 
 // build-time initialization of globals that libtextsecure needs
@@ -46,6 +47,8 @@ window.isValidGuid = (maybeGuid: string) =>
   /^[0-9A-F]{8}-[0-9A-F]{4}-4[0-9A-F]{3}-[89AB][0-9A-F]{3}-[0-9A-F]{12}$/i.test(
     maybeGuid
   );
+// https://stackoverflow.com/a/23299989
+window.isValidE164 = (maybeE164: string) => /^\+?[1-9]\d{1,14}$/.test(maybeE164);
 
 window.normalizeUuids = (obj: object, paths: string[], context: string) => {
   if (!obj) {
@@ -93,6 +96,7 @@ const initStorage = async (storage: StorageType) => {
       ProvisioningUuid: protobuf.ProvisioningUuid,
     }
   };
+  window.ConversationController = new ConversationController(new StorageConversations(storage));
   window.libsignal = libsignal;
   window.WebAPI = WebAPI;
   await window.storage.fetch();

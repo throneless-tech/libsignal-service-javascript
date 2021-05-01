@@ -1,9 +1,13 @@
+import PQueue from 'p-queue';
 import { UnprocessedType } from '../lib/ts/textsecure.d';
 import { StorageType } from './types/libsignal';
+import { Conversation, ConversationModel } from './Conversation';
+import { maybeDeriveGroupV2Id } from './shims/groups';
 
 const BLOCKED_NUMBERS_ID = 'blocked';
 const BLOCKED_UUIDS_ID = 'blocked-uuids';
 const BLOCKED_GROUPS_ID = 'blocked-groups';
+const MAX_MESSAGE_BODY_LENGTH = 64 * 1024;
 
 export class Storage {
   private ready: Boolean;
@@ -275,15 +279,15 @@ export class StorageUnprocessed {
     this.protocol = protocol;
   }
 
-  getCount() {
+  async getCount() {
     return this.protocol.getUnprocessedCount();
   }
 
-  getAll() {
+  async getAll() {
     return this.protocol.getAllUnprocessed();
   }
 
-  get(id: string) {
+  async get(id: string) {
     return this.protocol.getUnprocessedById(id);
   }
 
@@ -318,3 +322,164 @@ export class StorageUnprocessed {
     return this.protocol.removeAllUnprocessed();
   }
 };
+
+export class StorageConversations {
+  // length
+  // map
+  private _ready: Boolean;
+  private _items: Record<string, Conversation>;
+  private _protocol: StorageType;
+
+  constructor(protocol: StorageType) {
+    this._ready = false;
+    this._items = {};
+    this._protocol = protocol;
+  }
+
+  async fetch(): Promise<void>{
+    this.reset();
+    try {
+      const collection = await this._protocol.getAllConversations();
+
+      // Get rid of temporary conversations
+      const temporaryConversations = collection.filter(conversation =>
+        Boolean(conversation.isTemporary)
+      );
+
+      if (temporaryConversations.length) {
+        window.log.warn(
+          `ConversationController: Removing ${temporaryConversations.length} temporary conversations`
+        );
+      }
+      const queue = new PQueue({ concurrency: 3, timeout: 1000 * 60 * 2 });
+      queue.addAll(
+        temporaryConversations.map(item => async () => {
+          this.remove(item.id)
+        })
+      );
+      await queue.onIdle();
+
+      // Hydrate the final set of conversations
+      for (let i = 0, max = collection.length; i < max; i += 1) {
+        const item = collection[i];
+        if (!item.isTemporary) {
+          const { id } = item;
+          this._items[id] = new Conversation(item);
+        }
+      }
+
+
+      await Promise.all(
+        Object.values(this._items).map(async (conversation: any) => {
+          try {
+            // Hydrate contactCollection, now that initial fetch is complete
+            conversation.fetchContacts();
+
+            const isChanged = await maybeDeriveGroupV2Id(conversation);
+            if (isChanged) {
+              this._protocol.createOrUpdateConversation(conversation.attributes);
+            }
+
+            // In case a too-large draft was saved to the database
+            const draft = conversation.get('draft');
+            if (draft && draft.length > MAX_MESSAGE_BODY_LENGTH) {
+              conversation.set({
+                draft: draft.slice(0, MAX_MESSAGE_BODY_LENGTH),
+              });
+              this._protocol.createOrUpdateConversation(conversation.attributes);
+            }
+          } catch (error) {
+            window.log.error(
+              'ConversationController.load/map: Failed to prepare a conversation',
+              error && error.stack ? error.stack : error
+            );
+          }
+        })
+      );
+      this._ready = true;
+      window.log.info('ConversationController: done with initial fetch');
+    } catch (error) {
+      window.log.error(
+        'ConversationController: initial fetch failed',
+        error && error.stack ? error.stack : error
+      );
+      throw error;
+    }
+  }
+
+  get ready() {
+    return this._ready;
+  }
+
+  get length() {
+    return this._items.length;
+  }
+
+  get(id: string) {
+    if (!this._ready) {
+      window.log.warn('Called StorageConversations.get before storage is ready. key:', id);
+    }
+
+    return this._items[id];
+  }
+
+  async getAllGroupsInvolvingId(conversationId: string): Promise<Conversation[]> {
+    return Object.values(this._items).reduce((acc: Conversation[], item: Conversation) => {
+      if (item.type === 'group') {
+        const members = item.getMembers();
+        if (!!members.find(member => member.id === conversationId)) {
+          acc.push(item);
+        }
+      }
+      return acc;
+    }, []);
+  }
+
+  async migrateConversationMessages(obsoleteId: string, currentId: string) {
+    const item = this.get(obsoleteId);
+    await this.removeAndAwait(obsoleteId);
+    await this.addAndAwait({ ...item.attributes, id: currentId });
+  }
+
+  add(props: Partial<ConversationModel>)  {
+    const conversation = new Conversation(props);
+    this._protocol.createOrUpdateConversation(conversation);
+    return conversation;
+  }
+
+  async addAndAwait(props: Partial<ConversationModel>)  {
+    const conversation = new Conversation(props);
+    await this._protocol.createOrUpdateConversation(conversation);
+    return conversation;
+  }
+
+
+  remove(id: string) {
+    if (!this._ready) {
+      window.log.warn(
+        'Called storage.remove before storage is ready. key:',
+        id
+      );
+    }
+
+    delete this._items[id];
+    this._protocol.removeConversationById(id);
+  }
+
+  async removeAndAwait(id: string) {
+    if (!this._ready) {
+      window.log.warn(
+        'Called storage.remove before storage is ready. key:',
+        id
+      );
+    }
+
+    delete this._items[id];
+    return this._protocol.removeConversationById(id);
+  }
+
+
+  reset() {
+    this._items = {};
+  }
+}
