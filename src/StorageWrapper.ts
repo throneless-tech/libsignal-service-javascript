@@ -196,7 +196,7 @@ export class StorageImpl {
     return this.storage.put(key, value);
   }
 
-  async get(key: string, defaultValue: unknown): Promise<unknown> {
+  get(key: string, defaultValue: unknown) {
     return this.storage.get(key, defaultValue);
   }
 

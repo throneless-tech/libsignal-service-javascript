@@ -263,6 +263,27 @@ class Storage {
     return this._getAll('configuration');
   }
 
+  // Conversations
+  async createOrUpdateConversation(data) {
+    const { id } = data;
+    this._put('conversation', id, data);
+  }
+
+  async getConversationById(id) {
+    return this._get('conversation', id);
+  }
+
+  async removeConversationById(id) {
+    return this._remove('conversation', id);
+  }
+
+  async removeAllConversations() {
+    return this._removeAll('conversation');
+  }
+
+  async getAllConversations() {
+    return this._getAll('conversation');
+  }
 }
 
 exports = module.exports = Storage;

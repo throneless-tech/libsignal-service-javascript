@@ -26,9 +26,12 @@ import { SignalProtocolStore } from './LibSignalStore';
 import { AccountManager } from './AccountManager';
 import { ConversationController } from './ConversationController';
 
-
 // build-time initialization of globals that libtextsecure needs
 window.log = log;
+
+window.libphonenumber = PhoneNumberUtil.getInstance();
+window.libphonenumber.PhoneNumberFormat = PhoneNumberFormat;
+import '../lib/js/libphonenumber-util.js';
 
 window.crypto = crypto;
 
@@ -39,9 +42,6 @@ window.dcodeIO = {
     fromString,
   },
 };
-
-window.libphonenumber = PhoneNumberUtil.getInstance();
-window.libphonenumber.PhoneNumberFormat = PhoneNumberFormat;
 
 window.isValidGuid = (maybeGuid: string) =>
   /^[0-9A-F]{8}-[0-9A-F]{4}-4[0-9A-F]{3}-[89AB][0-9A-F]{3}-[0-9A-F]{12}$/i.test(
@@ -97,6 +97,7 @@ const initStorage = async (storage: StorageType) => {
     }
   };
   window.ConversationController = new ConversationController(new StorageConversations(storage));
+  await window.ConversationController.load();
   window.libsignal = libsignal;
   window.WebAPI = WebAPI;
   await window.storage.fetch();
