@@ -1,7 +1,70 @@
 
 
 // const helpers = require("../src/helpers.js");
+const ByteBuffer = require('bytebuffer');
 const {LocalStorage} = require('node-localstorage');
+
+const _call = (object) => Object.prototype.toString.call(object);
+
+const ArrayBufferToString = _call(new ArrayBuffer(0));
+const Uint8ArrayToString = _call(new Uint8Array());
+
+function _getString(thing) {
+  if (typeof thing !== 'string') {
+    if (_call(thing) === Uint8ArrayToString) {
+      return String.fromCharCode.apply(null, thing);
+    }
+    if (_call(thing) === ArrayBufferToString) {
+      return _getString(new Uint8Array(thing));
+    }
+  }
+
+  return thing;
+}
+
+function _getStringable(thing) {
+  return (
+    typeof thing === 'string' ||
+    typeof thing === 'number' ||
+    typeof thing === 'boolean' ||
+    (thing === Object(thing) &&
+      (_call(thing) === ArrayBufferToString ||
+        _call(thing) === Uint8ArrayToString))
+  );
+}
+
+function _ensureStringed(thing) {
+  if (_getStringable(thing)) {
+    return _getString(thing);
+  }
+  if (thing instanceof Array) {
+    const res = [];
+    for (let i = 0; i < thing.length; i += 1) {
+      res[i] = _ensureStringed(thing[i]);
+    }
+
+    return res;
+  }
+  if (thing === Object(thing)) {
+    const res = {};
+    for (const key in thing) {
+      res[key] = _ensureStringed(thing[key]);
+    }
+
+    return res;
+  }
+  if (thing === null) {
+    return null;
+  }
+  if (thing === undefined) {
+    return undefined;
+  }
+  throw new Error(`unsure of how to jsonify object of type ${typeof thing}`);
+}
+
+function _jsonThing(thing) {
+  return JSON.stringify(_ensureStringed(thing));
+}
 
 class Storage {
   constructor(path) {
@@ -9,20 +72,30 @@ class Storage {
   }
 
   _put(namespace, id, data) {
-    this._store.setItem(`${  namespace  }:${id}`, JSON.stringify(data));
+    this._store.setItem(`${  namespace  }@${id}`, _jsonThing(data));
   }
 
   _putAll(namespace, data) {
     if (Array.isArray(data)) {
       for (const item of data) {
-        this._store.setItem(`${  namespace  }:${item.id}`, JSON.stringify(data));
+        this._store.setItem(`${  namespace  }@${item.id}`, _jsonThing(data));
       }
     }
   }
 
   _get(namespace, id) {
-    const value = this._store.getItem(`${  namespace  }:${id}`);
-    return JSON.parse(value);
+    const value = this._store.getItem(`${  namespace  }@${id}`);
+    return JSON.parse(value, (key, value) => {
+      switch (key) {
+        case 'privKey':
+        case 'privateKey':
+        case 'pubKey':
+        case 'publicKey':
+          return ByteBuffer.wrap(value, 'binary').toArrayBuffer();
+        default:
+          return value;
+      }
+    });
   }
 
   _getAll(namespace) {
@@ -47,7 +120,7 @@ class Storage {
   // }
 
   _remove(namespace, id) {
-    this._store.removeItem(`${  namespace  }:${id}`);
+    this._store.removeItem(`${  namespace  }@${id}`);
   }
 
   _removeAll(namespace) {
@@ -127,8 +200,8 @@ class Storage {
 
   // PreKeys
   async createOrUpdatePreKey(data) {
-    const { keyId } = data;
-    this._put('25519KeypreKey', keyId.toString(), data);
+    const { id } = data;
+    this._put('25519KeypreKey', id.toString(), data);
   }
 
   async getPreKeyById(id) {
@@ -138,8 +211,8 @@ class Storage {
   async bulkAddPreKeys(data) {
     if (Array.isArray(data)) {
       for (const item of data) {
-        const { keyId } = data;
-        this._put('25519KeypreKey', keyId.toString(), data);
+        const { id } = item;
+        this._put('25519KeypreKey', id.toString(), item);
       }
     }
   }
@@ -158,8 +231,8 @@ class Storage {
 
   // SignedPreKeys
   async createOrUpdateSignedPreKey(data) {
-    const { keyId } = data;
-    this._put('25519KeysignedKey', keyId.toString, data);
+    const { id } = data;
+    this._put('25519KeysignedKey', id.toString(), data);
   }
 
   async getSignedPreKeyById(id) {
@@ -169,8 +242,8 @@ class Storage {
   async bulkAddSignedPreKeys(data) {
     if (Array.isArray(data)) {
       for (const item of data) {
-        const { keyId } = data;
-        this._put('25519KeysignedKey', keyId.toString(), data);
+        const { id } = item;
+        this._put('25519KeysignedKey', id.toString(), item);
       }
     }
   }

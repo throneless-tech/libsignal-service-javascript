@@ -15,6 +15,27 @@ Internal.protobuf = {};
 Internal.protobuf.PreKeyWhisperMessage = PreKeyWhisperMessage;
 Internal.protobuf.WhisperMessage = WhisperMessage;
 
+Internal.SessionLock = {};
+
+const jobQueue = {};
+
+Internal.SessionLock.queueJobForNumber = function queueJobForNumber(number, runJob) {
+    if (window.PQueue) {
+        jobQueue[number] = jobQueue[number] || new window.PQueue({ concurrency: 1, timeout: 1000 * 60 * 2 });
+        const queue = jobQueue[number];
+        return queue.add(runJob);
+    }
+
+    const runPrevious = jobQueue[number] || Promise.resolve();
+    const runCurrent = jobQueue[number] = runPrevious.then(runJob, runJob);
+    runCurrent.then(function() {
+        if (jobQueue[number] === runCurrent) {
+            delete jobQueue[number];
+        }
+    });
+    return runCurrent;
+};
+
 if (!crypto || !crypto.subtle || typeof crypto.getRandomValues !== 'function') {
     throw new Error('WebCrypto not found');
 }
@@ -868,7 +889,7 @@ SessionCipher.prototype = {
               preKeyMsg.signedPreKeyId = session.pendingPreKey.signedKeyId;
 
               preKeyMsg.message = message;
-              const result = String.fromCharCode((3 << 4) | 3) + util.toString(preKeyMsg.encode());
+              const result = String.fromCharCode((3 << 4) | 3) + util.toString(preKeyMsg.encode().toArrayBuffer());
               return {
                   type           : 3,
                   body           : result,

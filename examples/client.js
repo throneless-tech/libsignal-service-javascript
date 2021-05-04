@@ -51,276 +51,255 @@ const Signal = require('../dist/libsignal-service.js');
 
 const args = process.argv.slice(2);
 
-console.log('***args***:', args);
 
 function printError(error) {
   console.log(error);
 }
 
 let accountManager;
-  let messageSender;
-  let username;
-  let password;
-  let number;
-  let numbers;
-  let groupId;
-  let text;
-  let expire;
+let messageSender;
+let username;
+let password;
+let number;
+let numbers;
+let groupId;
+let text;
+let expire;
+let attachments;
+let captchaToken;
+let code;
+let result;
+let file;
+let filePath;
 
-Signal.initStorage(new Storage(process.env.STORE)).then(() => {
-switch (args[0]) {
-  case 'request':
-  case 'requestSMS':
-    username = args[1];
-    password = args[2];
-    captchaToken = args[3];
-    accountManager = new Signal.AccountManager(
-      username,
-      password
-    );
-
-    accountManager
-      .requestSMSVerification(username, captchaToken)
-      .then(result => {
+async function main() {
+  try {
+    await Signal.initStorage(new Storage(process.env.STORE));
+    switch (args.shift()) {
+      case 'request':
+      case 'requestSMS':
+        ([username, password, captchaToken] = args);
+        accountManager = new Signal.AccountManager(
+          username,
+          password
+        );
+        await accountManager.requestSMSVerification(username, captchaToken);
         console.log('Sent verification code.');
-      })
-      .catch(printError);
-    break;
-  case 'requestVoice':
-    username = args[1];
-    password = args[2];
-    accountManager = new Signal.AccountManager(
-      username,
-      password
-    );
-
-    accountManager
-      .requestVoiceVerification(username, captchaToken)
-      .then(result => {
+        break;
+      case 'requestVoice':
+        ([username, password, captchaToken] = args);
+        accountManager = new Signal.AccountManager(
+          username,
+          password
+        );
+        await accountManager.requestVoiceVerification(username, captchaToken);
         console.log('Calling for verification.');
-        
-      })
-      .catch(printError);
-    break;
-  case 'register':
-    username = args[1];
-    password = args[2];
-    const code = args[3];
-    console.log('***code***:', code);
-    accountManager = new Signal.AccountManager(
-      username,
-      password
-    );
-
-    accountManager
-      .registerSingleDevice(username, code)
-      .then(result => {
+        break;
+      case 'register':
+        ([username, password, code] = args);
+        accountManager = new Signal.AccountManager(
+          username,
+          password
+        );
+    
+        result = await accountManager.registerSingleDevice(username, code);
         console.log(result);
-      })
-      .catch(printError);
-    break;
-  case 'send':
-    number = args[1];
-    text = args[2];
-    attachments = [];
-    messageSender = new Signal.MessageSender();
-    messageSender.connect().then(() => {
-      if (args[3]) {
-        Signal.AttachmentHelper.loadFile(args[3])
-          .then(file => {
+        break;
+      case 'send':
+        ([number, text, filePath] = args);
+        attachments = [];
+        messageSender = new Signal.MessageSender();
+        if (filePath) {
+          file = await Signal.AttachmentHelper.loadFile(filePath);
+          if (file) {
             attachments.push(file);
-          })
-          .then(() => {
-            messageSender
-              .sendMessageToNumber({
-                number,
-                body: text,
-                attachments,
+          }
+          result = await messageSender.sendMessageToNumber({ number, body: text, attachments });
+          console.log(result);
+        } else {
+          result = await messageSender
+            .sendMessageToIdentifier(
+              number,
+              text,
+              undefined,
+              undefined,
+              undefined,
+              undefined,
+              undefined,
+              undefined,
+              Date.now()
+            );
+              console.log(result);
+        }
+        break;
+      case 'sendToGroup':
+        groupId = args[1];
+        numbers = args[2].split(',');
+        text = args[3];
+        attachments = [];
+        messageSender = new Signal.MessageSender();
+        messageSender.connect().then(() => {
+          if (args[4]) {
+            Signal.AttachmentHelper.loadFile(args[4])
+              .then(file => {
+                attachments.push(file);
               })
-              .then(result => {
-                console.log(result);
-              })
-              .catch(printError);
-          });
-      } else {
-        messageSender
-          .sendMessageToNumber({
-            number,
-            body: text,
-            attachments,
-          })
-          .then(result => {
-            console.log(result);
-          })
-          .catch(printError);
-      }
-    });
-    break;
-  case 'sendToGroup':
-    groupId = args[1];
-    numbers = args[2].split(',');
-    text = args[3];
-    attachments = [];
-    messageSender = new Signal.MessageSender();
-    messageSender.connect().then(() => {
-      if (args[4]) {
-        Signal.AttachmentHelper.loadFile(args[4])
-          .then(file => {
-            attachments.push(file);
-          })
-          .then(() => {
+              .then(() => {
+                messageSender
+                  .sendMessageToGroup({
+                    groupId,
+                    recipients: numbers,
+                    body: text,
+                    attachments,
+                  })
+                  .then(result => {
+                    console.log(result);
+                  })
+                  .catch(printError);
+              });
+          } else {
             messageSender
               .sendMessageToGroup({
                 groupId,
                 recipients: numbers,
                 body: text,
-                attachments,
               })
               .then(result => {
                 console.log(result);
               })
               .catch(printError);
-          });
-      } else {
-        messageSender
-          .sendMessageToGroup({
-            groupId,
-            recipients: numbers,
-            body: text,
-          })
-          .then(result => {
-            console.log(result);
-          })
-          .catch(printError);
-      }
-    });
-    break;
-  case 'expire':
-    number = args[1];
-    expire = args[2];
-    messageSender = new Signal.MessageSender();
-    messageSender.connect().then(() => {
-      messageSender
-        .sendExpirationTimerUpdateToNumber(number, parseInt(expire))
-        .then(result => {
-          console.log(result);
-        })
-        .catch(printError);
-    });
-    break;
-  case 'createGroup':
-    name = args[1];
-    numbers = args[2];
-    messageSender = new Signal.MessageSender();
-    messageSender.connect().then(() => {
-      groupId = Signal.KeyHelper.generateGroupId();
-      messageSender
-        .createGroup(numbers.split(','), groupId, name)
-        .then(result => {
-          console.log('Created group with ID: ', groupId);
-        })
-        .catch(printError);
-    });
-    break;
-  case 'leaveGroup':
-    groupId = args[1];
-    numbers = args[2].split(',');
-    messageSender = new Signal.MessageSender();
-    messageSender.connect().then(() => {
-      messageSender
-        .leaveGroup(groupId, numbers)
-        .then(result => {
-          console.log(result);
-          console.log('Left group with ID: ', groupId);
-        })
-        .catch(printError);
-    });
-    break;
-  case 'receive':
-    const messageReceiver = new Signal.MessageReceiver();
-    messageReceiver.connect().then(() => {
-      messageReceiver.addEventListener('message', ev => {
-        console.log('*** EVENT ***:', ev);
-        ev.data.message.attachments.map(attachment => {
-          messageReceiver
-            .handleAttachment(attachment)
-            .then(attachmentPointer => {
-              Signal.AttachmentHelper.saveFile(attachmentPointer, './').then(
-                fileName => {
-                  console.log('Wrote file to: ', fileName);
-                }
-              );
-            });
+          }
         });
-        if (ev.data.message.group) {
-          console.log(ev.data.message.group);
+        break;
+      case 'expire':
+        number = args[1];
+        expire = args[2];
+        messageSender = new Signal.MessageSender();
+        messageSender.connect().then(() => {
+          messageSender
+            .sendExpirationTimerUpdateToNumber(number, parseInt(expire))
+            .then(result => {
+              console.log(result);
+            })
+            .catch(printError);
+        });
+        break;
+      case 'createGroup':
+        name = args[1];
+        numbers = args[2];
+        messageSender = new Signal.MessageSender();
+        messageSender.connect().then(() => {
+          groupId = Signal.KeyHelper.generateGroupId();
+          messageSender
+            .createGroup(numbers.split(','), groupId, name)
+            .then(result => {
+              console.log('Created group with ID: ', groupId);
+            })
+            .catch(printError);
+        });
+        break;
+      case 'leaveGroup':
+        groupId = args[1];
+        numbers = args[2].split(',');
+        messageSender = new Signal.MessageSender();
+        messageSender.connect().then(() => {
+          messageSender
+            .leaveGroup(groupId, numbers)
+            .then(result => {
+              console.log(result);
+              console.log('Left group with ID: ', groupId);
+            })
+            .catch(printError);
+        });
+        break;
+      case 'receive':
+        ([number, password] = args);
+        const messageReceiver = new Signal.MessageReceiver(number, undefined, password);
+        messageReceiver.addEventListener('message', ev => {
+          console.log('*** EVENT ***:', ev);
+          ev.data.message.attachments.map(attachment => {
+            messageReceiver
+              .handleAttachment(attachment)
+              .then(attachmentPointer => {
+                Signal.AttachmentHelper.saveFile(attachmentPointer, './').then(
+                  fileName => {
+                    console.log('Wrote file to: ', fileName);
+                  }
+                );
+              });
+          });
+          if (ev.data.message.group) {
+            console.log(ev.data.message.group);
+            console.log(
+              `Received message in group ${ 
+                ev.data.message.group.id
+                 }: ${
+                 ev.data.message.body}`
+            );
+          } else {
+            console.log('Received message: ', ev.data.message.body);
+          }
+          ev.confirm();
+        });
+        messageReceiver.addEventListener('configuration', ev => {
+          console.log('Received configuration sync: ', ev.configuration);
+          ev.confirm();
+        });
+        messageReceiver.addEventListener('group', ev => {
+          console.log('Received group details: ', ev.groupDetails);
+          ev.confirm();
+        });
+        messageReceiver.addEventListener('contact', ev => {
           console.log(
-            `Received message in group ${ 
-              ev.data.message.group.id
-               }: ${
-               ev.data.message.body}`
+            `Received contact for ${ 
+              ev.contactDetails.number
+               } who has name ${
+               ev.contactDetails.name}`
           );
-        } else {
-          console.log('Received message: ', ev.data.message.body);
-        }
-        ev.confirm();
-      });
-      messageReceiver.addEventListener('configuration', ev => {
-        console.log('Received configuration sync: ', ev.configuration);
-        ev.confirm();
-      });
-      messageReceiver.addEventListener('group', ev => {
-        console.log('Received group details: ', ev.groupDetails);
-        ev.confirm();
-      });
-      messageReceiver.addEventListener('contact', ev => {
-        console.log(
-          `Received contact for ${ 
-            ev.contactDetails.number
-             } who has name ${
-             ev.contactDetails.name}`
-        );
-        ev.confirm();
-      });
-      messageReceiver.addEventListener('verified', ev => {
-        console.log('Received verification: ', ev.verified);
-        ev.confirm();
-      });
-      messageReceiver.addEventListener('sent', ev => {
-        console.log(
-          `Message successfully sent from device ${ 
-            ev.data.deviceId
-             } to ${
-             ev.data.destination
-             } at timestamp ${
-             ev.data.timestamp}`
-        );
-        ev.confirm();
-      });
-      messageReceiver.addEventListener('delivery', ev => {
-        console.log(
-          `Message successfully delivered to number ${ 
-            ev.deliveryReceipt.source
-             } and device ${
-             ev.deliveryReceipt.sourceDevice
-             } at timestamp ${
-             ev.deliveryReceipt.timestamp}`
-        );
-        ev.confirm();
-      });
-      messageReceiver.addEventListener('read', ev => {
-        console.log(
-          `Message read on ${ 
-            ev.read.reader
-             } at timestamp ${
-             ev.read.timestamp}`
-        );
-        ev.confirm();
-      });
-    });
-    break;
-  default:
-    console.log('No valid command specified.');
-    break;
+          ev.confirm();
+        });
+        messageReceiver.addEventListener('verified', ev => {
+          console.log('Received verification: ', ev.verified);
+          ev.confirm();
+        });
+        messageReceiver.addEventListener('sent', ev => {
+          console.log(
+            `Message successfully sent from device ${ 
+              ev.data.deviceId
+               } to ${
+               ev.data.destination
+               } at timestamp ${
+               ev.data.timestamp}`
+          );
+          ev.confirm();
+        });
+        messageReceiver.addEventListener('delivery', ev => {
+          console.log(
+            `Message successfully delivered to number ${ 
+              ev.deliveryReceipt.source
+               } and device ${
+               ev.deliveryReceipt.sourceDevice
+               } at timestamp ${
+               ev.deliveryReceipt.timestamp}`
+          );
+          ev.confirm();
+        });
+        messageReceiver.addEventListener('read', ev => {
+          console.log(
+            `Message read on ${ 
+              ev.read.reader
+               } at timestamp ${
+               ev.read.timestamp}`
+          );
+          ev.confirm();
+        });
+        break;
+      default:
+        console.log('No valid command specified.');
+        break;
+    }
+  } catch (err) {
+    printError(err);
+  }
 }
-});
+main();

@@ -24,6 +24,8 @@ import * as protobuf from './js/ProtobufWrapper';
 import { Storage, StorageImpl, StorageConversations, StorageUser, StorageUnprocessed } from './StorageWrapper';
 import { SignalProtocolStore } from './LibSignalStore';
 import { AccountManager } from './AccountManager';
+import { MessageReceiver } from './MessageReceiver';
+import { MessageSender } from './SendMessage';
 import { ConversationController } from './ConversationController';
 
 // build-time initialization of globals that libtextsecure needs
@@ -79,6 +81,7 @@ window.Signal = { Crypto };
 
 // run-time initialization of globals that libtextsecure needs
 const initStorage = async (storage: StorageType) => {
+  // Why do we interact with storage in several places via different interfaces?
   window.storage = new Storage(storage);
   window.Signal.Data = storage;
   textsecure.storage.impl = new StorageImpl(window.storage);
@@ -93,16 +96,21 @@ const initStorage = async (storage: StorageType) => {
     },
     protobuf: {
       ...protobuf,
+      //DataMessage: {
+      //  ...protobuf.DataMessage,
+      //  Flags: protobuf.DataMessage.prototype.flags,
+      //},
       ProvisioningUuid: protobuf.ProvisioningUuid,
     }
   };
   window.ConversationController = new ConversationController(new StorageConversations(storage));
-  await window.ConversationController.load();
   window.libsignal = libsignal;
   window.WebAPI = WebAPI;
-  await window.storage.fetch();
+  await Promise.all([
+    window.storage.fetch(),
+    window.textsecure.storage.protocol.hydrateCaches(),
+    window.ConversationController.load(),
+  ]);
 }
-
-const { MessageSender, MessageReceiver } = textsecure;
 
 export { initStorage, AccountManager, MessageSender, MessageReceiver };

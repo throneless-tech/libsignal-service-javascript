@@ -27,6 +27,7 @@ const config: Configuration = {
    new ProvidePlugin({
     window: 'global/window',
     btoa: 'btoa',
+    Event: [resolve(__dirname, 'src/shims/Event'), 'EventShim'],
    }),
   ],
   module: {

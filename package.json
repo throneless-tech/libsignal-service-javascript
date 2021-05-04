@@ -10,10 +10,11 @@
   ],
   "scripts": {
     "clean": "rimraf dist/*.js",
-    "build:protobuf": "pbjs --target static-module --wrap es6 -o dist/compiled.js protos/*.proto",
+    "build:protobuf": "pbjs --target static-module --wrap es6 --keep-case -o dist/protobufs.js protos/*.proto",
+    "build:protobuf:types": "pbts -o dist/protobufs.d.ts dist/protobufs.js",
     "build:barrelsby": "barrelsby --delete -d src/shims",
     "build:webpack": "webpack",
-    "build": "npm run build:protobuf && npm run build:barrelsby && npm run build:webpack"
+    "build": "npm run build:protobuf && npm run build:protobuf:types && npm run build:barrelsby && npm run build:webpack"
   },
   "repository": {
     "type": "git",

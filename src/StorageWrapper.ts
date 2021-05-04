@@ -412,7 +412,7 @@ export class StorageConversations {
   }
 
   get length() {
-    return this._items.length;
+    return Object.keys(this._items).length;
   }
 
   get(id: string) {
@@ -420,7 +420,7 @@ export class StorageConversations {
       window.log.warn('Called StorageConversations.get before storage is ready. key:', id);
     }
 
-    return this._items[id];
+    return Object.values(this._items).find(conv => conv.id === id || conv.e164 === id);
   }
 
   async getAllGroupsInvolvingId(conversationId: string): Promise<Conversation[]> {
@@ -444,12 +444,14 @@ export class StorageConversations {
   add(props: Partial<ConversationModel>)  {
     const conversation = new Conversation(props);
     this._protocol.createOrUpdateConversation(conversation);
+    this._items[conversation.id] = conversation;
     return conversation;
   }
 
   async addAndAwait(props: Partial<ConversationModel>)  {
     const conversation = new Conversation(props);
     await this._protocol.createOrUpdateConversation(conversation);
+    this._items[conversation.id] = conversation;
     return conversation;
   }
 
