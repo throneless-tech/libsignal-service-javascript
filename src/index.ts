@@ -6,6 +6,7 @@ import { PhoneNumberUtil, PhoneNumberFormat } from 'google-libphonenumber';
 // upstream
 import { textsecure } from '../lib/ts/textsecure/index';
 import * as Crypto from '../lib/ts/Crypto';
+import * as synchronousCrypto from '../lib/ts/util/synchronousCrypto';
 
 // types
 import './types/ByteBufferExtended';
@@ -80,6 +81,8 @@ window.reduxActions = {
 }
 
 window.Signal = { Crypto };
+
+window.synchronousCrypto = synchronousCrypto;
 
 // run-time initialization of globals that libtextsecure needs
 const init = async (storage: StorageType) => {

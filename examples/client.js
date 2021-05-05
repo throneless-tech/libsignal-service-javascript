@@ -114,7 +114,7 @@ async function main() {
           if (file) {
             attachments.push(file);
           }
-          result = await messageSender.sendMessageToNumber({ number, body: text, attachments });
+          result = await messageSender.sendMessageToIdentifier({ identifier: number, messageText: text, attachments });
           console.log(result);
         } else {
           result = await messageSender
@@ -207,7 +207,7 @@ async function main() {
         break;
       case 'receive':
         ([number, password] = args);
-        const messageReceiver = new Signal.MessageReceiver(number, undefined, password);
+        const messageReceiver = new Signal.MessageReceiver();
         messageReceiver.addEventListener('message', ev => {
           console.log('*** EVENT ***:', ev);
           ev.data.message.attachments.map(attachment => {

@@ -38,6 +38,7 @@ declare global {
     textsecure: TextSecureType;
     storage: Storage;
     SignalProtocolStore: SignalProtocolStore;
+    synchronousCrypto: any;
     reduxActions: {
       expiration: {
         hydrateExpirationStatus: (status: boolean) => boolean,
