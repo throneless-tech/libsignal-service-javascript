@@ -74,7 +74,7 @@ let filePath;
 
 async function main() {
   try {
-    await Signal.initStorage(new Storage(process.env.STORE));
+    await Signal.init(new Storage(process.env.STORE));
     switch (args.shift()) {
       case 'request':
       case 'requestSMS':
