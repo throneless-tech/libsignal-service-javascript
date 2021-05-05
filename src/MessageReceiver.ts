@@ -4,17 +4,13 @@ import { AttachmentPointerClass, DownloadAttachmentType } from '../lib/ts/textse
 
 export class MessageReceiver {
   private _inner: InstanceType<typeof textsecure.MessageReceiver>;
-  constructor({
-    signalingKey,
-  }: {
-    signalingKey?: ArrayBuffer,
-  }) {
+  constructor() {
     const number_id = window.textsecure.storage.get('number_id');
     const password = window.textsecure.storage.get('password');
     const {serverTrustRoot} = config;
 
     const [username] = number_id ? number_id.split('.') : [];
-    this._inner = new textsecure.MessageReceiver(username, undefined, password, signalingKey, { serverTrustRoot });
+    this._inner = new textsecure.MessageReceiver(username, undefined, password, undefined, { serverTrustRoot });
   }
 
   addEventListener(name: string, handler: Function) {
