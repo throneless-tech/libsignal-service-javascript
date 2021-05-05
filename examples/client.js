@@ -118,17 +118,10 @@ async function main() {
           console.log(result);
         } else {
           result = await messageSender
-            .sendMessageToIdentifier(
-              number,
-              text,
-              undefined,
-              undefined,
-              undefined,
-              undefined,
-              undefined,
-              undefined,
-              Date.now()
-            );
+            .sendMessageToIdentifier({
+              identifier: number,
+              messageText: text,
+            });
               console.log(result);
         }
         break;

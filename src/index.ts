@@ -26,6 +26,8 @@ import { SignalProtocolStore } from './LibSignalStore';
 import { AccountManager } from './AccountManager';
 import { MessageReceiver } from './MessageReceiver';
 import { MessageSender } from './SendMessage';
+import * as AttachmentHelper from './AttachmentHelper';
+import { generateGroupId, generatePassword } from './crypto-utils';
 import { ConversationController } from './ConversationController';
 
 // build-time initialization of globals that libtextsecure needs
@@ -80,7 +82,7 @@ window.reduxActions = {
 window.Signal = { Crypto };
 
 // run-time initialization of globals that libtextsecure needs
-const initStorage = async (storage: StorageType) => {
+const init = async (storage: StorageType) => {
   // Why do we interact with storage in several places via different interfaces?
   window.storage = new Storage(storage);
   window.Signal.Data = storage;
@@ -113,4 +115,10 @@ const initStorage = async (storage: StorageType) => {
   ]);
 }
 
-export { initStorage, AccountManager, MessageSender, MessageReceiver };
+const KeyHelper = {
+  ...libsignal.KeyHelper,
+  generateGroupId,
+  generatePassword,
+}
+
+export { init, AccountManager, AttachmentHelper, KeyHelper, MessageSender, MessageReceiver };

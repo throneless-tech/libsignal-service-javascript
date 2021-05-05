@@ -4,9 +4,7 @@
   "description": "A fork of the the libtextsecure components of Signal-Desktop, adapted for use by nodejs.",
   "main": "dist/libsignal-service.js",
   "files": [
-    "/src",
-    "/config",
-    "/protos"
+    "/dist/libsignal-service.js"
   ],
   "scripts": {
     "clean": "rimraf dist/*.js",
@@ -32,17 +30,6 @@
     "url": "https://github.com/throneless-tech/libsignal-service-javascript/issues"
   },
   "homepage": "https://github.com/throneless-tech/libsignal-service-javascript#readme",
-  "husky": {
-    "hooks": {
-      "pre-commit": "lint-staged"
-    }
-  },
-  "lint-staged": {
-    "*.js": [
-      "eslint --fix",
-      "git add"
-    ]
-  },
   "dependencies": {
     "@sindresorhus/is": "0.8.0",
     "abort-controller": "3.0.0",
@@ -84,9 +71,11 @@
     "@types/bytebuffer": "^5.0.42",
     "@types/debug": "^4.1.5",
     "@types/google-libphonenumber": "7.4.14",
+    "@types/image-size": "^0.8.0",
     "@types/lodash": "4.14.106",
     "@types/long": "4.0.1",
     "@types/memoizee": "0.4.2",
+    "@types/mime-types": "^2.1.0",
     "@types/node": "10.17.58",
     "@types/node-fetch": "2.5.7",
     "@types/node-forge": "0.9.5",
