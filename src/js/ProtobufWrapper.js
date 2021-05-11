@@ -73,7 +73,7 @@ export function onLoad(callback) {
 
 export class AccessControl extends AccessControlOrig {
   static decode(data, encoding) {
-    return AccessControlOrig.decode(new Uint8Array(data instanceof ByteBufferClass ? data.buffer : data));
+    return convertBuffers(AccessControlOrig.decode(new Uint8Array(data instanceof ByteBufferClass ? data.buffer : data)));;
   }
 
   encode() {
@@ -87,7 +87,7 @@ export class AccessControl extends AccessControlOrig {
 
 export class AccountRecord extends AccountRecordOrig {
   static decode(data, encoding) {
-    return AccountRecordOrig.decode(new Uint8Array(data instanceof ByteBufferClass ? data.buffer : data));
+    return convertBuffers(AccountRecordOrig.decode(new Uint8Array(data instanceof ByteBufferClass ? data.buffer : data)));;
   }
 
   encode() {
@@ -101,7 +101,7 @@ export class AccountRecord extends AccountRecordOrig {
 
 export class AttachmentPointer extends AttachmentPointerOrig {
   static decode(data, encoding) {
-    return AttachmentPointerOrig.decode(new Uint8Array(data instanceof ByteBufferClass ? data.buffer : data));
+    return convertBuffers(AttachmentPointerOrig.decode(new Uint8Array(data instanceof ByteBufferClass ? data.buffer : data)));;
   }
 
   encode() {
@@ -115,7 +115,7 @@ export class AttachmentPointer extends AttachmentPointerOrig {
 
 export class AvatarUploadAttributes extends AvatarUploadAttributesOrig {
   static decode(data, encoding) {
-    return AvatarUploadAttributesOrig.decode(new Uint8Array(data instanceof ByteBufferClass ? data.buffer : data));
+    return convertBuffers(AvatarUploadAttributesOrig.decode(new Uint8Array(data instanceof ByteBufferClass ? data.buffer : data)));;
   }
 
   encode() {
@@ -129,7 +129,7 @@ export class AvatarUploadAttributes extends AvatarUploadAttributesOrig {
 
 export class CallingMessage extends CallingMessageOrig {
   static decode(data, encoding) {
-    return CallingMessageOrig.decode(new Uint8Array(data instanceof ByteBufferClass ? data.buffer : data));
+    return convertBuffers(CallingMessageOrig.decode(new Uint8Array(data instanceof ByteBufferClass ? data.buffer : data)));;
   }
 
   encode() {
@@ -143,7 +143,7 @@ export class CallingMessage extends CallingMessageOrig {
 
 export class ContactDetails extends ContactDetailsOrig {
   static decode(data, encoding) {
-    return ContactDetailsOrig.decode(new Uint8Array(data instanceof ByteBufferClass ? data.buffer : data));
+    return convertBuffers(ContactDetailsOrig.decode(new Uint8Array(data instanceof ByteBufferClass ? data.buffer : data)));;
   }
 
   encode() {
@@ -157,7 +157,7 @@ export class ContactDetails extends ContactDetailsOrig {
 
 export class ContactRecord extends ContactRecordOrig {
   static decode(data, encoding) {
-    return ContactRecordOrig.decode(new Uint8Array(data instanceof ByteBufferClass ? data.buffer : data));
+    return convertBuffers(ContactRecordOrig.decode(new Uint8Array(data instanceof ByteBufferClass ? data.buffer : data)));;
   }
 
   encode() {
@@ -171,7 +171,7 @@ export class ContactRecord extends ContactRecordOrig {
 
 export class Content extends ContentOrig {
   static decode(data, encoding) {
-    return ContentOrig.decode(new Uint8Array(data instanceof ByteBufferClass ? data.buffer : data));
+    return convertBuffers(ContentOrig.decode(new Uint8Array(data instanceof ByteBufferClass ? data.buffer : data)));;
   }
 
   encode() {
@@ -185,7 +185,7 @@ export class Content extends ContentOrig {
 
 export class DataMessage extends DataMessageOrig {
   static decode(data, encoding) {
-    return DataMessageOrig.decode(new Uint8Array(data instanceof ByteBufferClass ? data.buffer : data));
+    return convertBuffers(DataMessageOrig.decode(new Uint8Array(data instanceof ByteBufferClass ? data.buffer : data)));;
   }
 
   encode() {
@@ -198,7 +198,7 @@ export class DataMessage extends DataMessageOrig {
 }
 export class DeviceName extends DeviceNameOrig {
   static decode(data, encoding) {
-    return DeviceNameOrig.decode(new Uint8Array(data instanceof ByteBufferClass ? data.buffer : data));
+    return convertBuffers(DeviceNameOrig.decode(new Uint8Array(data instanceof ByteBufferClass ? data.buffer : data)));;
   }
 
   encode() {
@@ -212,7 +212,7 @@ export class DeviceName extends DeviceNameOrig {
 
 export class Envelope extends EnvelopeOrig {
   static decode(data, encoding) {
-    return EnvelopeOrig.decode(new Uint8Array(data instanceof ByteBufferClass ? data.buffer : data));
+    return convertBuffers(EnvelopeOrig.decode(new Uint8Array(data instanceof ByteBufferClass ? data.buffer : data)));;
   }
 
   encode() {
@@ -226,7 +226,7 @@ export class Envelope extends EnvelopeOrig {
 
 export class Group extends GroupOrig {
   static decode(data, encoding) {
-    return GroupOrig.decode(new Uint8Array(data instanceof ByteBufferClass ? data.buffer : data));
+    return convertBuffers(GroupOrig.decode(new Uint8Array(data instanceof ByteBufferClass ? data.buffer : data)));;
   }
 
   encode() {
@@ -240,7 +240,7 @@ export class Group extends GroupOrig {
 
 export class GroupAttributeBlob extends GroupAttributeBlobOrig {
   static decode(data, encoding) {
-    return GroupAttributeBlobOrig.decode(new Uint8Array(data instanceof ByteBufferClass ? data.buffer : data));
+    return convertBuffers(GroupAttributeBlobOrig.decode(new Uint8Array(data instanceof ByteBufferClass ? data.buffer : data)));;
   }
 
   encode() {
@@ -254,7 +254,7 @@ export class GroupAttributeBlob extends GroupAttributeBlobOrig {
 
 export class GroupChange extends GroupChangeOrig {
   static decode(data, encoding) {
-    return GroupChangeOrig.decode(new Uint8Array(data instanceof ByteBufferClass ? data.buffer : data));
+    return convertBuffers(GroupChangeOrig.decode(new Uint8Array(data instanceof ByteBufferClass ? data.buffer : data)));;
   }
 
   encode() {
@@ -268,7 +268,7 @@ export class GroupChange extends GroupChangeOrig {
 
 export class GroupChanges extends GroupChangesOrig {
   static decode(data, encoding) {
-    return GroupChangesOrig.decode(new Uint8Array(data instanceof ByteBufferClass ? data.buffer : data));
+    return convertBuffers(GroupChangesOrig.decode(new Uint8Array(data instanceof ByteBufferClass ? data.buffer : data)));;
   }
 
   encode() {
@@ -282,7 +282,7 @@ export class GroupChanges extends GroupChangesOrig {
 
 export class GroupContext extends GroupContextOrig {
   static decode(data, encoding) {
-    return GroupContextOrig.decode(new Uint8Array(data instanceof ByteBufferClass ? data.buffer : data));
+    return convertBuffers(GroupContextOrig.decode(new Uint8Array(data instanceof ByteBufferClass ? data.buffer : data)));;
   }
 
   encode() {
@@ -296,7 +296,7 @@ export class GroupContext extends GroupContextOrig {
 
 export class GroupContextV2 extends GroupContextV2Orig {
   static decode(data, encoding) {
-    return GroupContextV2Orig.decode(new Uint8Array(data instanceof ByteBufferClass ? data.buffer : data));
+    return convertBuffers(GroupContextV2Orig.decode(new Uint8Array(data instanceof ByteBufferClass ? data.buffer : data)));;
   }
 
   encode() {
@@ -310,7 +310,7 @@ export class GroupContextV2 extends GroupContextV2Orig {
 
 export class GroupDetails extends GroupDetailsOrig {
   static decode(data, encoding) {
-    return GroupDetailsOrig.decode(new Uint8Array(data instanceof ByteBufferClass ? data.buffer : data));
+    return convertBuffers(GroupDetailsOrig.decode(new Uint8Array(data instanceof ByteBufferClass ? data.buffer : data)));;
   }
 
   encode() {
@@ -324,7 +324,7 @@ export class GroupDetails extends GroupDetailsOrig {
 
 export class GroupExternalCredential extends GroupExternalCredentialOrig {
   static decode(data, encoding) {
-    return GroupExternalCredentialOrig.decode(new Uint8Array(data instanceof ByteBufferClass ? data.buffer : data));
+    return convertBuffers(GroupExternalCredentialOrig.decode(new Uint8Array(data instanceof ByteBufferClass ? data.buffer : data)));;
   }
 
   encode() {
@@ -338,7 +338,7 @@ export class GroupExternalCredential extends GroupExternalCredentialOrig {
 
 export class GroupInviteLink extends GroupInviteLinkOrig {
   static decode(data, encoding) {
-    return GroupInviteLinkOrig.decode(new Uint8Array(data instanceof ByteBufferClass ? data.buffer : data));
+    return convertBuffers(GroupInviteLinkOrig.decode(new Uint8Array(data instanceof ByteBufferClass ? data.buffer : data)));;
   }
 
   encode() {
@@ -352,7 +352,7 @@ export class GroupInviteLink extends GroupInviteLinkOrig {
 
 export class GroupJoinInfo extends GroupJoinInfoOrig {
   static decode(data, encoding) {
-    return GroupJoinInfoOrig.decode(new Uint8Array(data instanceof ByteBufferClass ? data.buffer : data));
+    return convertBuffers(GroupJoinInfoOrig.decode(new Uint8Array(data instanceof ByteBufferClass ? data.buffer : data)));;
   }
 
   encode() {
@@ -366,7 +366,7 @@ export class GroupJoinInfo extends GroupJoinInfoOrig {
 
 export class GroupV1Record extends GroupV1RecordOrig {
   static decode(data, encoding) {
-    return GroupV1RecordOrig.decode(new Uint8Array(data instanceof ByteBufferClass ? data.buffer : data));
+    return convertBuffers(GroupV1RecordOrig.decode(new Uint8Array(data instanceof ByteBufferClass ? data.buffer : data)));;
   }
 
   encode() {
@@ -380,7 +380,7 @@ export class GroupV1Record extends GroupV1RecordOrig {
 
 export class GroupV2Record extends GroupV2RecordOrig {
   static decode(data, encoding) {
-    return GroupV2RecordOrig.decode(new Uint8Array(data instanceof ByteBufferClass ? data.buffer : data));
+    return convertBuffers(GroupV2RecordOrig.decode(new Uint8Array(data instanceof ByteBufferClass ? data.buffer : data)));;
   }
 
   encode() {
@@ -394,7 +394,7 @@ export class GroupV2Record extends GroupV2RecordOrig {
 
 export class KeyExchangeMessage extends KeyExchangeMessageOrig {
   static decode(data, encoding) {
-    return KeyExchangeMessageOrig.decode(new Uint8Array(data instanceof ByteBufferClass ? data.buffer : data));
+    return convertBuffers(KeyExchangeMessageOrig.decode(new Uint8Array(data instanceof ByteBufferClass ? data.buffer : data)));;
   }
 
   encode() {
@@ -408,7 +408,7 @@ export class KeyExchangeMessage extends KeyExchangeMessageOrig {
 
 export class ManifestRecord extends ManifestRecordOrig {
   static decode(data, encoding) {
-    return ManifestRecordOrig.decode(new Uint8Array(data instanceof ByteBufferClass ? data.buffer : data));
+    return convertBuffers(ManifestRecordOrig.decode(new Uint8Array(data instanceof ByteBufferClass ? data.buffer : data)));;
   }
 
   encode() {
@@ -422,7 +422,7 @@ export class ManifestRecord extends ManifestRecordOrig {
 
 export class Member extends MemberOrig {
   static decode(data, encoding) {
-    return MemberOrig.decode(new Uint8Array(data instanceof ByteBufferClass ? data.buffer : data));
+    return convertBuffers(MemberOrig.decode(new Uint8Array(data instanceof ByteBufferClass ? data.buffer : data)));;
   }
 
   encode() {
@@ -436,7 +436,7 @@ export class Member extends MemberOrig {
 
 export class MemberPendingAdminApproval extends MemberPendingAdminApprovalOrig {
   static decode(data, encoding) {
-    return MemberPendingAdminApprovalOrig.decode(new Uint8Array(data instanceof ByteBufferClass ? data.buffer : data));
+    return convertBuffers(MemberPendingAdminApprovalOrig.decode(new Uint8Array(data instanceof ByteBufferClass ? data.buffer : data)));;
   }
 
   encode() {
@@ -450,7 +450,7 @@ export class MemberPendingAdminApproval extends MemberPendingAdminApprovalOrig {
 
 export class MemberPendingProfileKey extends MemberPendingProfileKeyOrig {
   static decode(data, encoding) {
-    return MemberPendingProfileKeyOrig.decode(new Uint8Array(data instanceof ByteBufferClass ? data.buffer : data));
+    return convertBuffers(MemberPendingProfileKeyOrig.decode(new Uint8Array(data instanceof ByteBufferClass ? data.buffer : data)));;
   }
 
   encode() {
@@ -464,7 +464,7 @@ export class MemberPendingProfileKey extends MemberPendingProfileKeyOrig {
 
 export class NullMessage extends NullMessageOrig {
   static decode(data, encoding) {
-    return NullMessageOrig.decode(new Uint8Array(data instanceof ByteBufferClass ? data.buffer : data));
+    return convertBuffers(NullMessageOrig.decode(new Uint8Array(data instanceof ByteBufferClass ? data.buffer : data)));;
   }
 
   encode() {
@@ -478,7 +478,7 @@ export class NullMessage extends NullMessageOrig {
 
 export class PreKeyWhisperMessage extends PreKeyWhisperMessageOrig {
   static decode(data, encoding) {
-    return PreKeyWhisperMessageOrig.decode(new Uint8Array(data instanceof ByteBufferClass ? data.buffer : data));
+    return convertBuffers(PreKeyWhisperMessageOrig.decode(new Uint8Array(data instanceof ByteBufferClass ? data.buffer : data)));;
   }
 
   encode() {
@@ -492,7 +492,7 @@ export class PreKeyWhisperMessage extends PreKeyWhisperMessageOrig {
 
 export class ProvisionEnvelope extends ProvisionEnvelopeOrig {
   static decode(data, encoding) {
-    return ProvisionEnvelopeOrig.decode(new Uint8Array(data instanceof ByteBufferClass ? data.buffer : data));
+    return convertBuffers(ProvisionEnvelopeOrig.decode(new Uint8Array(data instanceof ByteBufferClass ? data.buffer : data)));;
   }
 
   encode() {
@@ -506,7 +506,7 @@ export class ProvisionEnvelope extends ProvisionEnvelopeOrig {
 
 export class ProvisioningUuid extends ProvisioningUuidOrig {
   static decode(data, encoding) {
-    return ProvisioningUuidOrig.decode(new Uint8Array(data instanceof ByteBufferClass ? data.buffer : data));
+    return convertBuffers(ProvisioningUuidOrig.decode(new Uint8Array(data instanceof ByteBufferClass ? data.buffer : data)));;
   }
 
   encode() {
@@ -520,7 +520,7 @@ export class ProvisioningUuid extends ProvisioningUuidOrig {
 
 export class ProvisionMessage extends ProvisionMessageOrig {
   static decode(data, encoding) {
-    return ProvisionMessageOrig.decode(new Uint8Array(data instanceof ByteBufferClass ? data.buffer : data));
+    return convertBuffers(ProvisionMessageOrig.decode(new Uint8Array(data instanceof ByteBufferClass ? data.buffer : data)));;
   }
 
   encode() {
@@ -535,7 +535,7 @@ export class ProvisionMessage extends ProvisionMessageOrig {
 export const ProvisioningVersion = {
   ...ProvisioningVersionOrig,
   decode(data, encoding) {
-    return ProvisioningVersionOrig.decode(new Uint8Array(data instanceof ByteBufferClass ? data.buffer : data));
+    return convertBuffers(ProvisioningVersionOrig.decode(new Uint8Array(data instanceof ByteBufferClass ? data.buffer : data)));;
   },
   encode() {
     return this;
@@ -547,7 +547,7 @@ export const ProvisioningVersion = {
 
 export class ReadOperation extends ReadOperationOrig {
   static decode(data, encoding) {
-    return ReadOperationOrig.decode(new Uint8Array(data instanceof ByteBufferClass ? data.buffer : data));
+    return convertBuffers(ReadOperationOrig.decode(new Uint8Array(data instanceof ByteBufferClass ? data.buffer : data)));;
   }
 
   encode() {
@@ -561,7 +561,7 @@ export class ReadOperation extends ReadOperationOrig {
 
 export class ReceiptMessage extends ReceiptMessageOrig {
   static decode(data, encoding) {
-    return ReceiptMessageOrig.decode(new Uint8Array(data instanceof ByteBufferClass ? data.buffer : data));
+    return convertBuffers(ReceiptMessageOrig.decode(new Uint8Array(data instanceof ByteBufferClass ? data.buffer : data)));;
   }
 
   encode() {
@@ -575,7 +575,7 @@ export class ReceiptMessage extends ReceiptMessageOrig {
 
 export class SenderCertificate extends SenderCertificateOrig {
   static decode(data, encoding) {
-    return SenderCertificateOrig.decode(new Uint8Array(data instanceof ByteBufferClass ? data.buffer : data));
+    return convertBuffers(SenderCertificateOrig.decode(new Uint8Array(data instanceof ByteBufferClass ? data.buffer : data)));;
   }
 
   encode() {
@@ -589,7 +589,7 @@ export class SenderCertificate extends SenderCertificateOrig {
 
 export class ServerCertificate extends ServerCertificateOrig {
   static decode(data, encoding) {
-    return ServerCertificateOrig.decode(new Uint8Array(data instanceof ByteBufferClass ? data.buffer : data));
+    return convertBuffers(ServerCertificateOrig.decode(new Uint8Array(data instanceof ByteBufferClass ? data.buffer : data)));;
   }
 
   encode() {
@@ -603,7 +603,7 @@ export class ServerCertificate extends ServerCertificateOrig {
 
 export class StickerPack extends StickerPackOrig {
   static decode(data, encoding) {
-    return StickerPackOrig.decode(new Uint8Array(data instanceof ByteBufferClass ? data.buffer : data));
+    return convertBuffers(StickerPackOrig.decode(new Uint8Array(data instanceof ByteBufferClass ? data.buffer : data)));;
   }
 
   encode() {
@@ -617,7 +617,7 @@ export class StickerPack extends StickerPackOrig {
 
 export class StorageItem extends StorageItemOrig {
   static decode(data, encoding) {
-    return StorageItemOrig.decode(new Uint8Array(data instanceof ByteBufferClass ? data.buffer : data));
+    return convertBuffers(StorageItemOrig.decode(new Uint8Array(data instanceof ByteBufferClass ? data.buffer : data)));;
   }
 
   encode() {
@@ -631,7 +631,7 @@ export class StorageItem extends StorageItemOrig {
 
 export class StorageItems extends StorageItemsOrig {
   static decode(data, encoding) {
-    return StorageItemsOrig.decode(new Uint8Array(data instanceof ByteBufferClass ? data.buffer : data));
+    return convertBuffers(StorageItemsOrig.decode(new Uint8Array(data instanceof ByteBufferClass ? data.buffer : data)));;
   }
 
   encode() {
@@ -645,7 +645,7 @@ export class StorageItems extends StorageItemsOrig {
 
 export class StorageManifest extends StorageManifestOrig {
   static decode(data, encoding) {
-    return StorageManifestOrig.decode(new Uint8Array(data instanceof ByteBufferClass ? data.buffer : data));
+    return convertBuffers(StorageManifestOrig.decode(new Uint8Array(data instanceof ByteBufferClass ? data.buffer : data)));;
   }
 
   encode() {
@@ -659,7 +659,7 @@ export class StorageManifest extends StorageManifestOrig {
 
 export class StorageRecord extends StorageRecordOrig {
   static decode(data, encoding) {
-    return StorageRecordOrig.decode(new Uint8Array(data instanceof ByteBufferClass ? data.buffer : data));
+    return convertBuffers(StorageRecordOrig.decode(new Uint8Array(data instanceof ByteBufferClass ? data.buffer : data)));;
   }
 
   encode() {
@@ -673,7 +673,7 @@ export class StorageRecord extends StorageRecordOrig {
 
 export class SyncMessage extends SyncMessageOrig {
   static decode(data, encoding) {
-    return SyncMessageOrig.decode(new Uint8Array(data instanceof ByteBufferClass ? data.buffer : data));
+    return convertBuffers(SyncMessageOrig.decode(new Uint8Array(data instanceof ByteBufferClass ? data.buffer : data)));;
   }
 
   encode() {
@@ -687,7 +687,7 @@ export class SyncMessage extends SyncMessageOrig {
 
 export class TypingMessage extends TypingMessageOrig {
   static decode(data, encoding) {
-    return TypingMessageOrig.decode(new Uint8Array(data instanceof ByteBufferClass ? data.buffer : data));
+    return convertBuffers(TypingMessageOrig.decode(new Uint8Array(data instanceof ByteBufferClass ? data.buffer : data)));;
   }
 
   encode() {
@@ -701,7 +701,7 @@ export class TypingMessage extends TypingMessageOrig {
 
 export class UnidentifiedSenderMessage extends UnidentifiedSenderMessageOrig {
   static decode(data, encoding) {
-    return UnidentifiedSenderMessageOrig.decode(new Uint8Array(data instanceof ByteBufferClass ? data.buffer : data));
+    return convertBuffers(UnidentifiedSenderMessageOrig.decode(new Uint8Array(data instanceof ByteBufferClass ? data.buffer : data)));;
   }
 
   encode() {
@@ -715,7 +715,7 @@ export class UnidentifiedSenderMessage extends UnidentifiedSenderMessageOrig {
 
 export class Verified extends VerifiedOrig {
   static decode(data, encoding) {
-    return VerifiedOrig.decode(new Uint8Array(data instanceof ByteBufferClass ? data.buffer : data));
+    return convertBuffers(VerifiedOrig.decode(new Uint8Array(data instanceof ByteBufferClass ? data.buffer : data)));;
   }
 
   encode() {
@@ -729,8 +729,7 @@ export class Verified extends VerifiedOrig {
 
 export class WebSocketMessage extends WebSocketMessageOrig {
   static decode(data, encoding) {
-    const message = WebSocketMessageOrig.decode(new Uint8Array(data instanceof ByteBufferClass ? data.buffer : data));
-    return convertBuffers(message);
+    return convertBuffers(convertBuffers(WebSocketMessageOrig.decode(new Uint8Array(data instanceof ByteBufferClass ? data.buffer : data))));;
   }
 
   encode() {
@@ -744,7 +743,7 @@ export class WebSocketMessage extends WebSocketMessageOrig {
 
 export class WebSocketRequestMessage extends WebSocketRequestMessageOrig {
   static decode(data, encoding) {
-    return WebSocketRequestMessageOrig.decode(new Uint8Array(data instanceof ByteBufferClass ? data.buffer : data));
+    return convertBuffers(WebSocketRequestMessageOrig.decode(new Uint8Array(data instanceof ByteBufferClass ? data.buffer : data)));;
   }
 
   encode() {
@@ -758,7 +757,7 @@ export class WebSocketRequestMessage extends WebSocketRequestMessageOrig {
 
 export class WebSocketResponseMessage extends WebSocketResponseMessageOrig {
   static decode(data, encoding) {
-    return WebSocketResponseMessageOrig.decode(new Uint8Array(data instanceof ByteBufferClass ? data.buffer : data));
+    return convertBuffers(WebSocketResponseMessageOrig.decode(new Uint8Array(data instanceof ByteBufferClass ? data.buffer : data)));;
   }
 
   encode() {
@@ -772,7 +771,7 @@ export class WebSocketResponseMessage extends WebSocketResponseMessageOrig {
 
 export class WhisperMessage extends WhisperMessageOrig {
   static decode(data, encoding) {
-    return WhisperMessageOrig.decode(new Uint8Array(data instanceof ByteBufferClass ? data.buffer : data));
+    return convertBuffers(WhisperMessageOrig.decode(new Uint8Array(data instanceof ByteBufferClass ? data.buffer : data)));;
   }
 
   encode() {
@@ -786,7 +785,7 @@ export class WhisperMessage extends WhisperMessageOrig {
 
 export class WriteOperation extends WriteOperationOrig {
   static decode(data, encoding) {
-    return WriteOperationOrig.decode(new Uint8Array(data instanceof ByteBufferClass ? data.buffer : data));
+    return convertBuffers(WriteOperationOrig.decode(new Uint8Array(data instanceof ByteBufferClass ? data.buffer : data)));;
   }
 
   encode() {
