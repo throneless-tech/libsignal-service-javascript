@@ -59,7 +59,7 @@ const convertBuffers = (message) => {
     if (message.hasOwnProperty(prop)) {
       if (message[prop] instanceof Uint8Array) {
         message[prop] = ByteBufferClass.wrap(message[prop]);
-      } else if (typeof message[prop] === 'object' && message[prop] !== null) {
+      } else if (typeof message[prop] === 'object' && message[prop] !== null && !(message[prop] instanceof ByteBufferClass)) {
         message[prop] = convertBuffers(message[prop]);
       }
     }
