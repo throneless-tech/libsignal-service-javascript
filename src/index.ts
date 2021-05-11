@@ -28,11 +28,14 @@ import { AccountManager } from './AccountManager';
 import { MessageReceiver } from './MessageReceiver';
 import { MessageSender } from './SendMessage';
 import * as AttachmentHelper from './AttachmentHelper';
-import { generateGroupId, generatePassword } from './crypto-utils';
+import { generateGroupId, generatePassword } from './utils';
 import { ConversationController } from './ConversationController';
+import { incrementMessageCounter } from './incrementMessageCounter';
 
 // build-time initialization of globals that libtextsecure needs
 window.log = log;
+
+window._ = _;
 
 window.libphonenumber = PhoneNumberUtil.getInstance();
 window.libphonenumber.PhoneNumberFormat = PhoneNumberFormat;
@@ -80,7 +83,7 @@ window.reduxActions = {
   }
 }
 
-window.Signal = { Crypto };
+window.Signal = { Crypto, Util: { incrementMessageCounter } };
 
 window.synchronousCrypto = synchronousCrypto;
 

@@ -36,6 +36,7 @@ declare global {
     };
     normalizeUuids: any;
     textsecure: TextSecureType;
+    receivedAtCounter: number;
     storage: Storage;
     SignalProtocolStore: SignalProtocolStore;
     synchronousCrypto: any;

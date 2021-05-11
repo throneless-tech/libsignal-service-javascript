@@ -78,7 +78,7 @@ class Storage {
   _putAll(namespace, data) {
     if (Array.isArray(data)) {
       for (const item of data) {
-        this._store.setItem(`${  namespace  }@${item.id}`, _jsonThing(data));
+        this._store.setItem(`${  namespace  }@${item.id}`, _jsonThing(item));
       }
     }
   }
@@ -138,11 +138,14 @@ class Storage {
   // IdentityKeys
   async createOrUpdateIdentityKey(data) {
     const { id } = data;
+    console.log('***createOrUpdateIdentityKey***:', data);
     this._put('identityKey', id, data);
   }
 
   async getIdentityKeyById(id) {
-    return this._get('identityKey', id);
+    const data = this._get('identityKey', id);
+    console.log('***getIdentityKey***:', data);
+    return data;
   }
 
   async bulkAddIdentityKeys(data) {
@@ -285,7 +288,7 @@ class Storage {
   }
 
   async updateUnprocessedAttempts(id, attempts) {
-    const data = this._get('unprocessed', id);
+    const data = this._get('unprocessed', id) || {};
     data.attempts = attempts;
     this._put('unprocessed', id, data);
   }

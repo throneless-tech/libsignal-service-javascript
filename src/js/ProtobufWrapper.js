@@ -54,6 +54,19 @@ import {
   WriteOperation as WriteOperationOrig,
 } from '../../dist/protobufs';
 
+const convertBuffers = (message) => {
+  for (const prop in message) {
+    if (message.hasOwnProperty(prop)) {
+      if (message[prop] instanceof Uint8Array) {
+        message[prop] = ByteBufferClass.wrap(message[prop]);
+      } else if (typeof message[prop] === 'object' && message[prop] !== null) {
+        message[prop] = convertBuffers(message[prop]);
+      }
+    }
+  }
+  return message;
+}
+
 export function onLoad(callback) {
     callback();
 }
@@ -716,7 +729,8 @@ export class Verified extends VerifiedOrig {
 
 export class WebSocketMessage extends WebSocketMessageOrig {
   static decode(data, encoding) {
-    return WebSocketMessageOrig.decode(new Uint8Array(data instanceof ByteBufferClass ? data.buffer : data));
+    const message = WebSocketMessageOrig.decode(new Uint8Array(data instanceof ByteBufferClass ? data.buffer : data));
+    return convertBuffers(message);
   }
 
   encode() {

@@ -1,6 +1,7 @@
 import { textsecure } from '../lib/ts/textsecure/index';
 export { AttachmentType, CallbackResultType, SendOptionsType } from '../lib/ts/textsecure/SendMessage';
 import { AttachmentType, CallbackResultType, SendOptionsType } from '../lib/ts/textsecure/SendMessage';
+import { getCredentials, maybeInitMessaging } from './utils';
 
 export type PreviewType = {
   url: string;
@@ -25,16 +26,10 @@ export interface SendMessageParams {
 
 export class MessageSender {
   private _inner: InstanceType<typeof textsecure.MessageSender>;
-  constructor(username?: string, password?: string) {
-    const number_id = window.textsecure.storage.get('number_id');
-    const storedPassword = window.textsecure.storage.get('password');
-
-    const [storedUsername] = number_id ? number_id.split('.') : [];
-    this._inner = new textsecure.MessageSender(
-      storedUsername ? storedUsername : username,
-      storedPassword ? storedPassword : password
-    );
-    window.textsecure.messaging = this._inner;
+  constructor() {
+    const [username, password] = getCredentials();
+    maybeInitMessaging(username, password);
+    this._inner = new textsecure.MessageSender(username, password);
   }
 
   async sendMessageToIdentifier({

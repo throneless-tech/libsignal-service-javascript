@@ -9,7 +9,6 @@ class AccountManagerInner extends textsecure.AccountManager {
   }
 
   async requestSMSVerification(number: string, captchaToken?: string) {
-    console.log('***AccountManagerInner***');
     return this.server.requestVerificationSMS(number, captchaToken);
   }
 }
