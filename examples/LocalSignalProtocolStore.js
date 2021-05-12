@@ -66,6 +66,20 @@ function _jsonThing(thing) {
   return JSON.stringify(_ensureStringed(thing));
 }
 
+function _jsonify(item) {
+  return JSON.parse(item, (key, value) => {
+    switch (key) {
+      case 'privKey':
+      case 'privateKey':
+      case 'pubKey':
+      case 'publicKey':
+        return ByteBuffer.wrap(value, 'binary').toArrayBuffer();
+      default:
+        return value;
+    }
+  });
+}
+
 class Storage {
   constructor(path) {
     this._store = new LocalStorage(path);
@@ -84,8 +98,8 @@ class Storage {
   }
 
   _get(namespace, id) {
-    const value = this._store.getItem(`${  namespace  }@${id}`);
-    return JSON.parse(value, (key, value) => {
+    const item = this._store.getItem(`${  namespace  }@${id}`);
+    return JSON.parse(item, (key, value) => {
       switch (key) {
         case 'privKey':
         case 'privateKey':
@@ -102,7 +116,7 @@ class Storage {
     const collection = [];
     for (const id of this._store._keys) {
       if (id.startsWith(namespace)) {
-        collection.push(JSON.parse(this._store.getItem(id)));
+        collection.push(_jsonify(this._store.getItem(id)));
       }
     }
     return collection;
