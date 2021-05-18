@@ -67,13 +67,18 @@ const convertBuffers = (message) => {
   return message;
 }
 
+const b2ab = (buffer) => {
+  if (buffer instanceof ArrayBuffer) return buffer;
+  return buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength);
+}
+
 export function onLoad(callback) {
     callback();
 }
 
 export class AccessControl extends AccessControlOrig {
   static decode(data, encoding) {
-    return convertBuffers(AccessControlOrig.decode(new Uint8Array(ByteBufferClass.isByteBuffer(data) ? data.toArrayBuffer() : data.buffer)));;
+    return convertBuffers(AccessControlOrig.decode(new Uint8Array(ByteBufferClass.isByteBuffer(data) ? data.toArrayBuffer() : b2ab(data))));
   }
 
   encode() {
@@ -81,13 +86,13 @@ export class AccessControl extends AccessControlOrig {
   }
 
   toArrayBuffer() {
-    return AccessControlOrig.encode(this).finish().buffer;
+    return b2ab(AccessControlOrig.encode(this).finish());
   }
 }
 
 export class AccountRecord extends AccountRecordOrig {
   static decode(data, encoding) {
-    return convertBuffers(AccountRecordOrig.decode(new Uint8Array(ByteBufferClass.isByteBuffer(data) ? data.toArrayBuffer() : data.buffer)));;
+    return convertBuffers(AccountRecordOrig.decode(new Uint8Array(ByteBufferClass.isByteBuffer(data) ? data.toArrayBuffer() : b2ab(data))));
   }
 
   encode() {
@@ -95,13 +100,13 @@ export class AccountRecord extends AccountRecordOrig {
   }
 
   toArrayBuffer() {
-    return AccountRecordOrig.encode(this).finish().buffer;
+    return b2ab(AccountRecordOrig.encode(this).finish());
   }
 }
 
 export class AttachmentPointer extends AttachmentPointerOrig {
   static decode(data, encoding) {
-    return convertBuffers(AttachmentPointerOrig.decode(new Uint8Array(ByteBufferClass.isByteBuffer(data) ? data.toArrayBuffer() : data.buffer)));;
+    return convertBuffers(AttachmentPointerOrig.decode(new Uint8Array(ByteBufferClass.isByteBuffer(data) ? data.toArrayBuffer() : b2ab(data))));
   }
 
   encode() {
@@ -109,13 +114,13 @@ export class AttachmentPointer extends AttachmentPointerOrig {
   }
 
   toArrayBuffer() {
-    return AttachmentPointerOrig.encode(this).finish().buffer;
+    return b2ab(AttachmentPointerOrig.encode(this).finish());
   }
 }
 
 export class AvatarUploadAttributes extends AvatarUploadAttributesOrig {
   static decode(data, encoding) {
-    return convertBuffers(AvatarUploadAttributesOrig.decode(new Uint8Array(ByteBufferClass.isByteBuffer(data) ? data.toArrayBuffer() : data.buffer)));;
+    return convertBuffers(AvatarUploadAttributesOrig.decode(new Uint8Array(ByteBufferClass.isByteBuffer(data) ? data.toArrayBuffer() : b2ab(data))));
   }
 
   encode() {
@@ -123,13 +128,13 @@ export class AvatarUploadAttributes extends AvatarUploadAttributesOrig {
   }
 
   toArrayBuffer() {
-    return AvatarUploadAttributesOrig.encode(this).finish().buffer;
+    return b2ab(AvatarUploadAttributesOrig.encode(this).finish());
   }
 }
 
 export class CallingMessage extends CallingMessageOrig {
   static decode(data, encoding) {
-    return convertBuffers(CallingMessageOrig.decode(new Uint8Array(ByteBufferClass.isByteBuffer(data) ? data.toArrayBuffer() : data.buffer)));;
+    return convertBuffers(CallingMessageOrig.decode(new Uint8Array(ByteBufferClass.isByteBuffer(data) ? data.toArrayBuffer() : b2ab(data))));
   }
 
   encode() {
@@ -137,13 +142,13 @@ export class CallingMessage extends CallingMessageOrig {
   }
 
   toArrayBuffer() {
-    return CallingMessageOrig.encode(this).finish().buffer;
+    return b2ab(CallingMessageOrig.encode(this).finish());
   }
 }
 
 export class ContactDetails extends ContactDetailsOrig {
   static decode(data, encoding) {
-    return convertBuffers(ContactDetailsOrig.decode(new Uint8Array(ByteBufferClass.isByteBuffer(data) ? data.toArrayBuffer() : data.buffer)));;
+    return convertBuffers(ContactDetailsOrig.decode(new Uint8Array(ByteBufferClass.isByteBuffer(data) ? data.toArrayBuffer() : b2ab(data))));
   }
 
   encode() {
@@ -151,13 +156,13 @@ export class ContactDetails extends ContactDetailsOrig {
   }
 
   toArrayBuffer() {
-    return ContactDetailsOrig.encode(this).finish().buffer;
+    return b2ab(ContactDetailsOrig.encode(this).finish());
   }
 }
 
 export class ContactRecord extends ContactRecordOrig {
   static decode(data, encoding) {
-    return convertBuffers(ContactRecordOrig.decode(new Uint8Array(ByteBufferClass.isByteBuffer(data) ? data.toArrayBuffer() : data.buffer)));;
+    return convertBuffers(ContactRecordOrig.decode(new Uint8Array(ByteBufferClass.isByteBuffer(data) ? data.toArrayBuffer() : b2ab(data))));
   }
 
   encode() {
@@ -165,13 +170,13 @@ export class ContactRecord extends ContactRecordOrig {
   }
 
   toArrayBuffer() {
-    return ContactRecordOrig.encode(this).finish().buffer;
+    return b2ab(ContactRecordOrig.encode(this).finish());
   }
 }
 
 export class Content extends ContentOrig {
   static decode(data, encoding) {
-    return convertBuffers(ContentOrig.decode(new Uint8Array(ByteBufferClass.isByteBuffer(data) ? data.toArrayBuffer() : data.buffer)));;
+    return convertBuffers(ContentOrig.decode(new Uint8Array(ByteBufferClass.isByteBuffer(data) ? data.toArrayBuffer() : b2ab(data))));
   }
 
   encode() {
@@ -179,13 +184,13 @@ export class Content extends ContentOrig {
   }
 
   toArrayBuffer() {
-    return ContentOrig.encode(this).finish().buffer;
+    return b2ab(ContentOrig.encode(this).finish());
   }
 }
 
 export class DataMessage extends DataMessageOrig {
   static decode(data, encoding) {
-    return convertBuffers(DataMessageOrig.decode(new Uint8Array(ByteBufferClass.isByteBuffer(data) ? data.toArrayBuffer() : data.buffer)));;
+    return convertBuffers(DataMessageOrig.decode(new Uint8Array(ByteBufferClass.isByteBuffer(data) ? data.toArrayBuffer() : b2ab(data))));
   }
 
   encode() {
@@ -193,12 +198,12 @@ export class DataMessage extends DataMessageOrig {
   }
 
   toArrayBuffer() {
-    return DataMessageOrig.encode(this).finish().buffer;
+    return b2ab(DataMessageOrig.encode(this).finish());
   }
 }
 export class DeviceName extends DeviceNameOrig {
   static decode(data, encoding) {
-    return convertBuffers(DeviceNameOrig.decode(new Uint8Array(ByteBufferClass.isByteBuffer(data) ? data.toArrayBuffer() : data.buffer)));;
+    return convertBuffers(DeviceNameOrig.decode(new Uint8Array(ByteBufferClass.isByteBuffer(data) ? data.toArrayBuffer() : b2ab(data))));
   }
 
   encode() {
@@ -206,13 +211,13 @@ export class DeviceName extends DeviceNameOrig {
   }
 
   toArrayBuffer() {
-    return DeviceNameOrig.encode(this).finish().buffer;
+    return b2ab(DeviceNameOrig.encode(this).finish());
   }
 }
 
 export class Envelope extends EnvelopeOrig {
   static decode(data, encoding) {
-    return convertBuffers(EnvelopeOrig.decode(new Uint8Array(ByteBufferClass.isByteBuffer(data) ? data.toArrayBuffer() : data.buffer)));;
+    return convertBuffers(EnvelopeOrig.decode(new Uint8Array(ByteBufferClass.isByteBuffer(data) ? data.toArrayBuffer() : b2ab(data))));
   }
 
   encode() {
@@ -220,13 +225,13 @@ export class Envelope extends EnvelopeOrig {
   }
 
   toArrayBuffer() {
-    return EnvelopeOrig.encode(this).finish().buffer;
+    return b2ab(EnvelopeOrig.encode(this).finish());
   }
 }
 
 export class Group extends GroupOrig {
   static decode(data, encoding) {
-    return convertBuffers(GroupOrig.decode(new Uint8Array(ByteBufferClass.isByteBuffer(data) ? data.toArrayBuffer() : data.buffer)));;
+    return convertBuffers(GroupOrig.decode(new Uint8Array(ByteBufferClass.isByteBuffer(data) ? data.toArrayBuffer() : b2ab(data))));
   }
 
   encode() {
@@ -234,13 +239,13 @@ export class Group extends GroupOrig {
   }
 
   toArrayBuffer() {
-    return GroupOrig.encode(this).finish().buffer;
+    return b2ab(GroupOrig.encode(this).finish());
   }
 }
 
 export class GroupAttributeBlob extends GroupAttributeBlobOrig {
   static decode(data, encoding) {
-    return convertBuffers(GroupAttributeBlobOrig.decode(new Uint8Array(ByteBufferClass.isByteBuffer(data) ? data.toArrayBuffer() : data.buffer)));;
+    return convertBuffers(GroupAttributeBlobOrig.decode(new Uint8Array(ByteBufferClass.isByteBuffer(data) ? data.toArrayBuffer() : b2ab(data))));
   }
 
   encode() {
@@ -248,13 +253,13 @@ export class GroupAttributeBlob extends GroupAttributeBlobOrig {
   }
 
   toArrayBuffer() {
-    return GroupAttributeBlobOrig.encode(this).finish().buffer;
+    return b2ab(GroupAttributeBlobOrig.encode(this).finish());
   }
 }
 
 export class GroupChange extends GroupChangeOrig {
   static decode(data, encoding) {
-    return convertBuffers(GroupChangeOrig.decode(new Uint8Array(ByteBufferClass.isByteBuffer(data) ? data.toArrayBuffer() : data.buffer)));;
+    return convertBuffers(GroupChangeOrig.decode(new Uint8Array(ByteBufferClass.isByteBuffer(data) ? data.toArrayBuffer() : b2ab(data))));
   }
 
   encode() {
@@ -262,13 +267,13 @@ export class GroupChange extends GroupChangeOrig {
   }
 
   toArrayBuffer() {
-    return GroupChangeOrig.encode(this).finish().buffer;
+    return b2ab(GroupChangeOrig.encode(this).finish());
   }
 }
 
 export class GroupChanges extends GroupChangesOrig {
   static decode(data, encoding) {
-    return convertBuffers(GroupChangesOrig.decode(new Uint8Array(ByteBufferClass.isByteBuffer(data) ? data.toArrayBuffer() : data.buffer)));;
+    return convertBuffers(GroupChangesOrig.decode(new Uint8Array(ByteBufferClass.isByteBuffer(data) ? data.toArrayBuffer() : b2ab(data))));
   }
 
   encode() {
@@ -276,13 +281,13 @@ export class GroupChanges extends GroupChangesOrig {
   }
 
   toArrayBuffer() {
-    return GroupChangesOrig.encode(this).finish().buffer;
+    return b2ab(GroupChangesOrig.encode(this).finish());
   }
 }
 
 export class GroupContext extends GroupContextOrig {
   static decode(data, encoding) {
-    return convertBuffers(GroupContextOrig.decode(new Uint8Array(ByteBufferClass.isByteBuffer(data) ? data.toArrayBuffer() : data.buffer)));;
+    return convertBuffers(GroupContextOrig.decode(new Uint8Array(ByteBufferClass.isByteBuffer(data) ? data.toArrayBuffer() : b2ab(data))));
   }
 
   encode() {
@@ -290,13 +295,13 @@ export class GroupContext extends GroupContextOrig {
   }
 
   toArrayBuffer() {
-    return GroupContextOrig.encode(this).finish().buffer;
+    return b2ab(GroupContextOrig.encode(this).finish());
   }
 }
 
 export class GroupContextV2 extends GroupContextV2Orig {
   static decode(data, encoding) {
-    return convertBuffers(GroupContextV2Orig.decode(new Uint8Array(ByteBufferClass.isByteBuffer(data) ? data.toArrayBuffer() : data.buffer)));;
+    return convertBuffers(GroupContextV2Orig.decode(new Uint8Array(ByteBufferClass.isByteBuffer(data) ? data.toArrayBuffer() : b2ab(data))));
   }
 
   encode() {
@@ -304,13 +309,13 @@ export class GroupContextV2 extends GroupContextV2Orig {
   }
 
   toArrayBuffer() {
-    return GroupContextV2Orig.encode(this).finish().buffer;
+    return b2ab(GroupContextV2Orig.encode(this).finish());
   }
 }
 
 export class GroupDetails extends GroupDetailsOrig {
   static decode(data, encoding) {
-    return convertBuffers(GroupDetailsOrig.decode(new Uint8Array(ByteBufferClass.isByteBuffer(data) ? data.toArrayBuffer() : data.buffer)));;
+    return convertBuffers(GroupDetailsOrig.decode(new Uint8Array(ByteBufferClass.isByteBuffer(data) ? data.toArrayBuffer() : b2ab(data))));
   }
 
   encode() {
@@ -318,13 +323,13 @@ export class GroupDetails extends GroupDetailsOrig {
   }
 
   toArrayBuffer() {
-    return GroupDetailsOrig.encode(this).finish().buffer;
+    return b2ab(GroupDetailsOrig.encode(this).finish());
   }
 }
 
 export class GroupExternalCredential extends GroupExternalCredentialOrig {
   static decode(data, encoding) {
-    return convertBuffers(GroupExternalCredentialOrig.decode(new Uint8Array(ByteBufferClass.isByteBuffer(data) ? data.toArrayBuffer() : data.buffer)));;
+    return convertBuffers(GroupExternalCredentialOrig.decode(new Uint8Array(ByteBufferClass.isByteBuffer(data) ? data.toArrayBuffer() : b2ab(data))));
   }
 
   encode() {
@@ -332,13 +337,13 @@ export class GroupExternalCredential extends GroupExternalCredentialOrig {
   }
 
   toArrayBuffer() {
-    return GroupExternalCredentialOrig.encode(this).finish().buffer;
+    return b2ab(GroupExternalCredentialOrig.encode(this).finish());
   }
 }
 
 export class GroupInviteLink extends GroupInviteLinkOrig {
   static decode(data, encoding) {
-    return convertBuffers(GroupInviteLinkOrig.decode(new Uint8Array(ByteBufferClass.isByteBuffer(data) ? data.toArrayBuffer() : data.buffer)));;
+    return convertBuffers(GroupInviteLinkOrig.decode(new Uint8Array(ByteBufferClass.isByteBuffer(data) ? data.toArrayBuffer() : b2ab(data))));
   }
 
   encode() {
@@ -346,13 +351,13 @@ export class GroupInviteLink extends GroupInviteLinkOrig {
   }
 
   toArrayBuffer() {
-    return GroupInviteLinkOrig.encode(this).finish().buffer;
+    return b2ab(GroupInviteLinkOrig.encode(this).finish());
   }
 }
 
 export class GroupJoinInfo extends GroupJoinInfoOrig {
   static decode(data, encoding) {
-    return convertBuffers(GroupJoinInfoOrig.decode(new Uint8Array(ByteBufferClass.isByteBuffer(data) ? data.toArrayBuffer() : data.buffer)));;
+    return convertBuffers(GroupJoinInfoOrig.decode(new Uint8Array(ByteBufferClass.isByteBuffer(data) ? data.toArrayBuffer() : b2ab(data))));
   }
 
   encode() {
@@ -360,13 +365,13 @@ export class GroupJoinInfo extends GroupJoinInfoOrig {
   }
 
   toArrayBuffer() {
-    return GroupJoinInfoOrig.encode(this).finish().buffer;
+    return b2ab(GroupJoinInfoOrig.encode(this).finish());
   }
 }
 
 export class GroupV1Record extends GroupV1RecordOrig {
   static decode(data, encoding) {
-    return convertBuffers(GroupV1RecordOrig.decode(new Uint8Array(ByteBufferClass.isByteBuffer(data) ? data.toArrayBuffer() : data.buffer)));;
+    return convertBuffers(GroupV1RecordOrig.decode(new Uint8Array(ByteBufferClass.isByteBuffer(data) ? data.toArrayBuffer() : b2ab(data))));
   }
 
   encode() {
@@ -374,13 +379,13 @@ export class GroupV1Record extends GroupV1RecordOrig {
   }
 
   toArrayBuffer() {
-    return GroupV1RecordOrig.encode(this).finish().buffer;
+    return b2ab(GroupV1RecordOrig.encode(this).finish());
   }
 }
 
 export class GroupV2Record extends GroupV2RecordOrig {
   static decode(data, encoding) {
-    return convertBuffers(GroupV2RecordOrig.decode(new Uint8Array(ByteBufferClass.isByteBuffer(data) ? data.toArrayBuffer() : data.buffer)));;
+    return convertBuffers(GroupV2RecordOrig.decode(new Uint8Array(ByteBufferClass.isByteBuffer(data) ? data.toArrayBuffer() : b2ab(data))));
   }
 
   encode() {
@@ -388,13 +393,13 @@ export class GroupV2Record extends GroupV2RecordOrig {
   }
 
   toArrayBuffer() {
-    return GroupV2RecordOrig.encode(this).finish().buffer;
+    return b2ab(GroupV2RecordOrig.encode(this).finish());
   }
 }
 
 export class KeyExchangeMessage extends KeyExchangeMessageOrig {
   static decode(data, encoding) {
-    return convertBuffers(KeyExchangeMessageOrig.decode(new Uint8Array(ByteBufferClass.isByteBuffer(data) ? data.toArrayBuffer() : data.buffer)));;
+    return convertBuffers(KeyExchangeMessageOrig.decode(new Uint8Array(ByteBufferClass.isByteBuffer(data) ? data.toArrayBuffer() : b2ab(data))));
   }
 
   encode() {
@@ -402,13 +407,13 @@ export class KeyExchangeMessage extends KeyExchangeMessageOrig {
   }
 
   toArrayBuffer() {
-    return KeyExchangeMessageOrig.encode(this).finish().buffer;
+    return b2ab(KeyExchangeMessageOrig.encode(this).finish());
   }
 }
 
 export class ManifestRecord extends ManifestRecordOrig {
   static decode(data, encoding) {
-    return convertBuffers(ManifestRecordOrig.decode(new Uint8Array(ByteBufferClass.isByteBuffer(data) ? data.toArrayBuffer() : data.buffer)));;
+    return convertBuffers(ManifestRecordOrig.decode(new Uint8Array(ByteBufferClass.isByteBuffer(data) ? data.toArrayBuffer() : b2ab(data))));
   }
 
   encode() {
@@ -416,13 +421,13 @@ export class ManifestRecord extends ManifestRecordOrig {
   }
 
   toArrayBuffer() {
-    return ManifestRecordOrig.encode(this).finish().buffer;
+    return b2ab(ManifestRecordOrig.encode(this).finish());
   }
 }
 
 export class Member extends MemberOrig {
   static decode(data, encoding) {
-    return convertBuffers(MemberOrig.decode(new Uint8Array(ByteBufferClass.isByteBuffer(data) ? data.toArrayBuffer() : data.buffer)));;
+    return convertBuffers(MemberOrig.decode(new Uint8Array(ByteBufferClass.isByteBuffer(data) ? data.toArrayBuffer() : b2ab(data))));
   }
 
   encode() {
@@ -430,13 +435,13 @@ export class Member extends MemberOrig {
   }
 
   toArrayBuffer() {
-    return MemberOrig.encode(this).finish().buffer;
+    return b2ab(MemberOrig.encode(this).finish());
   }
 }
 
 export class MemberPendingAdminApproval extends MemberPendingAdminApprovalOrig {
   static decode(data, encoding) {
-    return convertBuffers(MemberPendingAdminApprovalOrig.decode(new Uint8Array(ByteBufferClass.isByteBuffer(data) ? data.toArrayBuffer() : data.buffer)));;
+    return convertBuffers(MemberPendingAdminApprovalOrig.decode(new Uint8Array(ByteBufferClass.isByteBuffer(data) ? data.toArrayBuffer() : b2ab(data))));
   }
 
   encode() {
@@ -444,13 +449,13 @@ export class MemberPendingAdminApproval extends MemberPendingAdminApprovalOrig {
   }
 
   toArrayBuffer() {
-    return MemberPendingAdminApprovalOrig.encode(this).finish().buffer;
+    return b2ab(MemberPendingAdminApprovalOrig.encode(this).finish());
   }
 }
 
 export class MemberPendingProfileKey extends MemberPendingProfileKeyOrig {
   static decode(data, encoding) {
-    return convertBuffers(MemberPendingProfileKeyOrig.decode(new Uint8Array(ByteBufferClass.isByteBuffer(data) ? data.toArrayBuffer() : data.buffer)));;
+    return convertBuffers(MemberPendingProfileKeyOrig.decode(new Uint8Array(ByteBufferClass.isByteBuffer(data) ? data.toArrayBuffer() : b2ab(data))));
   }
 
   encode() {
@@ -458,13 +463,13 @@ export class MemberPendingProfileKey extends MemberPendingProfileKeyOrig {
   }
 
   toArrayBuffer() {
-    return MemberPendingProfileKeyOrig.encode(this).finish().buffer;
+    return b2ab(MemberPendingProfileKeyOrig.encode(this).finish());
   }
 }
 
 export class NullMessage extends NullMessageOrig {
   static decode(data, encoding) {
-    return convertBuffers(NullMessageOrig.decode(new Uint8Array(ByteBufferClass.isByteBuffer(data) ? data.toArrayBuffer() : data.buffer)));;
+    return convertBuffers(NullMessageOrig.decode(new Uint8Array(ByteBufferClass.isByteBuffer(data) ? data.toArrayBuffer() : b2ab(data))));
   }
 
   encode() {
@@ -472,13 +477,13 @@ export class NullMessage extends NullMessageOrig {
   }
 
   toArrayBuffer() {
-    return NullMessageOrig.encode(this).finish().buffer;
+    return b2ab(NullMessageOrig.encode(this).finish());
   }
 }
 
 export class PreKeyWhisperMessage extends PreKeyWhisperMessageOrig {
   static decode(data, encoding) {
-    return convertBuffers(PreKeyWhisperMessageOrig.decode(new Uint8Array(ByteBufferClass.isByteBuffer(data) ? data.toArrayBuffer() : data.buffer)));
+    return convertBuffers(PreKeyWhisperMessageOrig.decode(new Uint8Array(ByteBufferClass.isByteBuffer(data) ? data.toArrayBuffer() : b2ab(data))));
   }
 
   encode() {
@@ -486,13 +491,13 @@ export class PreKeyWhisperMessage extends PreKeyWhisperMessageOrig {
   }
 
   toArrayBuffer() {
-    return PreKeyWhisperMessageOrig.encode(this).finish().buffer;
+    return b2ab(PreKeyWhisperMessageOrig.encode(this).finish());
   }
 }
 
 export class ProvisionEnvelope extends ProvisionEnvelopeOrig {
   static decode(data, encoding) {
-    return convertBuffers(ProvisionEnvelopeOrig.decode(new Uint8Array(ByteBufferClass.isByteBuffer(data) ? data.toArrayBuffer() : data.buffer)));;
+    return convertBuffers(ProvisionEnvelopeOrig.decode(new Uint8Array(ByteBufferClass.isByteBuffer(data) ? data.toArrayBuffer() : b2ab(data))));
   }
 
   encode() {
@@ -500,13 +505,13 @@ export class ProvisionEnvelope extends ProvisionEnvelopeOrig {
   }
 
   toArrayBuffer() {
-    return ProvisionEnvelopeOrig.encode(this).finish().buffer;
+    return b2ab(ProvisionEnvelopeOrig.encode(this).finish());
   }
 }
 
 export class ProvisioningUuid extends ProvisioningUuidOrig {
   static decode(data, encoding) {
-    return convertBuffers(ProvisioningUuidOrig.decode(new Uint8Array(ByteBufferClass.isByteBuffer(data) ? data.toArrayBuffer() : data.buffer)));;
+    return convertBuffers(ProvisioningUuidOrig.decode(new Uint8Array(ByteBufferClass.isByteBuffer(data) ? data.toArrayBuffer() : b2ab(data))));
   }
 
   encode() {
@@ -514,13 +519,13 @@ export class ProvisioningUuid extends ProvisioningUuidOrig {
   }
 
   toArrayBuffer() {
-    return ProvisioningUuidOrig.encode(this).finish().buffer;
+    return b2ab(ProvisioningUuidOrig.encode(this).finish());
   }
 }
 
 export class ProvisionMessage extends ProvisionMessageOrig {
   static decode(data, encoding) {
-    return convertBuffers(ProvisionMessageOrig.decode(new Uint8Array(ByteBufferClass.isByteBuffer(data) ? data.toArrayBuffer() : data.buffer)));;
+    return convertBuffers(ProvisionMessageOrig.decode(new Uint8Array(ByteBufferClass.isByteBuffer(data) ? data.toArrayBuffer() : b2ab(data))));
   }
 
   encode() {
@@ -528,26 +533,26 @@ export class ProvisionMessage extends ProvisionMessageOrig {
   }
 
   toArrayBuffer() {
-    return ProvisionMessageOrig.encode(this).finish().buffer;
+    return b2ab(ProvisionMessageOrig.encode(this).finish());
   }
 }
 
 export const ProvisioningVersion = {
   ...ProvisioningVersionOrig,
   decode(data, encoding) {
-    return convertBuffers(ProvisioningVersionOrig.decode(new Uint8Array(ByteBufferClass.isByteBuffer(data) ? data.toArrayBuffer() : data.buffer)));;
+    return convertBuffers(ProvisioningVersionOrig.decode(new Uint8Array(ByteBufferClass.isByteBuffer(data) ? data.toArrayBuffer() : b2ab(data))));
   },
   encode() {
     return this;
   },
   toArrayBuffer() {
-    return ProvisioningVersionOrig.encode(this).finish().buffer;
+    return b2ab(ProvisioningVersionOrig.encode(this).finish());
   },
 }
 
 export class ReadOperation extends ReadOperationOrig {
   static decode(data, encoding) {
-    return convertBuffers(ReadOperationOrig.decode(new Uint8Array(ByteBufferClass.isByteBuffer(data) ? data.toArrayBuffer() : data.buffer)));;
+    return convertBuffers(ReadOperationOrig.decode(new Uint8Array(ByteBufferClass.isByteBuffer(data) ? data.toArrayBuffer() : b2ab(data))));
   }
 
   encode() {
@@ -555,13 +560,13 @@ export class ReadOperation extends ReadOperationOrig {
   }
 
   toArrayBuffer() {
-    return ReadOperationOrig.encode(this).finish().buffer;
+    return b2ab(ReadOperationOrig.encode(this).finish());
   }
 }
 
 export class ReceiptMessage extends ReceiptMessageOrig {
   static decode(data, encoding) {
-    return convertBuffers(ReceiptMessageOrig.decode(new Uint8Array(ByteBufferClass.isByteBuffer(data) ? data.toArrayBuffer() : data.buffer)));;
+    return convertBuffers(ReceiptMessageOrig.decode(new Uint8Array(ByteBufferClass.isByteBuffer(data) ? data.toArrayBuffer() : b2ab(data))));
   }
 
   encode() {
@@ -569,13 +574,13 @@ export class ReceiptMessage extends ReceiptMessageOrig {
   }
 
   toArrayBuffer() {
-    return ReceiptMessageOrig.encode(this).finish().buffer;
+    return b2ab(ReceiptMessageOrig.encode(this).finish());
   }
 }
 
 export class SenderCertificate extends SenderCertificateOrig {
   static decode(data, encoding) {
-    return convertBuffers(SenderCertificateOrig.decode(new Uint8Array(ByteBufferClass.isByteBuffer(data) ? data.toArrayBuffer() : data.buffer)));;
+    return convertBuffers(SenderCertificateOrig.decode(new Uint8Array(ByteBufferClass.isByteBuffer(data) ? data.toArrayBuffer() : b2ab(data))));
   }
 
   encode() {
@@ -583,13 +588,13 @@ export class SenderCertificate extends SenderCertificateOrig {
   }
 
   toArrayBuffer() {
-    return SenderCertificateOrig.encode(this).finish().buffer;
+    return b2ab(SenderCertificateOrig.encode(this).finish());
   }
 }
 
 export class ServerCertificate extends ServerCertificateOrig {
   static decode(data, encoding) {
-    return convertBuffers(ServerCertificateOrig.decode(new Uint8Array(ByteBufferClass.isByteBuffer(data) ? data.toArrayBuffer() : data.buffer)));;
+    return convertBuffers(ServerCertificateOrig.decode(new Uint8Array(ByteBufferClass.isByteBuffer(data) ? data.toArrayBuffer() : b2ab(data))));
   }
 
   encode() {
@@ -597,13 +602,13 @@ export class ServerCertificate extends ServerCertificateOrig {
   }
 
   toArrayBuffer() {
-    return ServerCertificateOrig.encode(this).finish().buffer;
+    return b2ab(ServerCertificateOrig.encode(this).finish());
   }
 }
 
 export class StickerPack extends StickerPackOrig {
   static decode(data, encoding) {
-    return convertBuffers(StickerPackOrig.decode(new Uint8Array(ByteBufferClass.isByteBuffer(data) ? data.toArrayBuffer() : data.buffer)));;
+    return convertBuffers(StickerPackOrig.decode(new Uint8Array(ByteBufferClass.isByteBuffer(data) ? data.toArrayBuffer() : b2ab(data))));
   }
 
   encode() {
@@ -611,13 +616,13 @@ export class StickerPack extends StickerPackOrig {
   }
 
   toArrayBuffer() {
-    return StickerPackOrig.encode(this).finish().buffer;
+    return b2ab(StickerPackOrig.encode(this).finish());
   }
 }
 
 export class StorageItem extends StorageItemOrig {
   static decode(data, encoding) {
-    return convertBuffers(StorageItemOrig.decode(new Uint8Array(ByteBufferClass.isByteBuffer(data) ? data.toArrayBuffer() : data.buffer)));;
+    return convertBuffers(StorageItemOrig.decode(new Uint8Array(ByteBufferClass.isByteBuffer(data) ? data.toArrayBuffer() : b2ab(data))));
   }
 
   encode() {
@@ -625,13 +630,13 @@ export class StorageItem extends StorageItemOrig {
   }
 
   toArrayBuffer() {
-    return StorageItemOrig.encode(this).finish().buffer;
+    return b2ab(StorageItemOrig.encode(this).finish());
   }
 }
 
 export class StorageItems extends StorageItemsOrig {
   static decode(data, encoding) {
-    return convertBuffers(StorageItemsOrig.decode(new Uint8Array(ByteBufferClass.isByteBuffer(data) ? data.toArrayBuffer() : data.buffer)));;
+    return convertBuffers(StorageItemsOrig.decode(new Uint8Array(ByteBufferClass.isByteBuffer(data) ? data.toArrayBuffer() : b2ab(data))));
   }
 
   encode() {
@@ -639,13 +644,13 @@ export class StorageItems extends StorageItemsOrig {
   }
 
   toArrayBuffer() {
-    return StorageItemsOrig.encode(this).finish().buffer;
+    return b2ab(StorageItemsOrig.encode(this).finish());
   }
 }
 
 export class StorageManifest extends StorageManifestOrig {
   static decode(data, encoding) {
-    return convertBuffers(StorageManifestOrig.decode(new Uint8Array(ByteBufferClass.isByteBuffer(data) ? data.toArrayBuffer() : data.buffer)));;
+    return convertBuffers(StorageManifestOrig.decode(new Uint8Array(ByteBufferClass.isByteBuffer(data) ? data.toArrayBuffer() : b2ab(data))));
   }
 
   encode() {
@@ -653,13 +658,13 @@ export class StorageManifest extends StorageManifestOrig {
   }
 
   toArrayBuffer() {
-    return StorageManifestOrig.encode(this).finish().buffer;
+    return b2ab(StorageManifestOrig.encode(this).finish());
   }
 }
 
 export class StorageRecord extends StorageRecordOrig {
   static decode(data, encoding) {
-    return convertBuffers(StorageRecordOrig.decode(new Uint8Array(ByteBufferClass.isByteBuffer(data) ? data.toArrayBuffer() : data.buffer)));;
+    return convertBuffers(StorageRecordOrig.decode(new Uint8Array(ByteBufferClass.isByteBuffer(data) ? data.toArrayBuffer() : b2ab(data))));
   }
 
   encode() {
@@ -667,13 +672,13 @@ export class StorageRecord extends StorageRecordOrig {
   }
 
   toArrayBuffer() {
-    return StorageRecordOrig.encode(this).finish().buffer;
+    return b2ab(StorageRecordOrig.encode(this).finish());
   }
 }
 
 export class SyncMessage extends SyncMessageOrig {
   static decode(data, encoding) {
-    return convertBuffers(SyncMessageOrig.decode(new Uint8Array(ByteBufferClass.isByteBuffer(data) ? data.toArrayBuffer() : data.buffer)));;
+    return convertBuffers(SyncMessageOrig.decode(new Uint8Array(ByteBufferClass.isByteBuffer(data) ? data.toArrayBuffer() : b2ab(data))));
   }
 
   encode() {
@@ -681,13 +686,13 @@ export class SyncMessage extends SyncMessageOrig {
   }
 
   toArrayBuffer() {
-    return SyncMessageOrig.encode(this).finish().buffer;
+    return b2ab(SyncMessageOrig.encode(this).finish());
   }
 }
 
 export class TypingMessage extends TypingMessageOrig {
   static decode(data, encoding) {
-    return convertBuffers(TypingMessageOrig.decode(new Uint8Array(ByteBufferClass.isByteBuffer(data) ? data.toArrayBuffer() : data.buffer)));;
+    return convertBuffers(TypingMessageOrig.decode(new Uint8Array(ByteBufferClass.isByteBuffer(data) ? data.toArrayBuffer() : b2ab(data))));
   }
 
   encode() {
@@ -695,13 +700,13 @@ export class TypingMessage extends TypingMessageOrig {
   }
 
   toArrayBuffer() {
-    return TypingMessageOrig.encode(this).finish().buffer;
+    return b2ab(TypingMessageOrig.encode(this).finish());
   }
 }
 
 export class UnidentifiedSenderMessage extends UnidentifiedSenderMessageOrig {
   static decode(data, encoding) {
-    return convertBuffers(UnidentifiedSenderMessageOrig.decode(new Uint8Array(ByteBufferClass.isByteBuffer(data) ? data.toArrayBuffer() : data.buffer)));;
+    return convertBuffers(UnidentifiedSenderMessageOrig.decode(new Uint8Array(ByteBufferClass.isByteBuffer(data) ? data.toArrayBuffer() : b2ab(data))));
   }
 
   encode() {
@@ -709,13 +714,13 @@ export class UnidentifiedSenderMessage extends UnidentifiedSenderMessageOrig {
   }
 
   toArrayBuffer() {
-    return UnidentifiedSenderMessageOrig.encode(this).finish().buffer;
+    return b2ab(UnidentifiedSenderMessageOrig.encode(this).finish());
   }
 }
 
 export class Verified extends VerifiedOrig {
   static decode(data, encoding) {
-    return convertBuffers(VerifiedOrig.decode(new Uint8Array(ByteBufferClass.isByteBuffer(data) ? data.toArrayBuffer() : data.buffer)));;
+    return convertBuffers(VerifiedOrig.decode(new Uint8Array(ByteBufferClass.isByteBuffer(data) ? data.toArrayBuffer() : b2ab(data))));
   }
 
   encode() {
@@ -723,13 +728,13 @@ export class Verified extends VerifiedOrig {
   }
 
   toArrayBuffer() {
-    return VerifiedOrig.encode(this).finish().buffer;
+    return b2ab(VerifiedOrig.encode(this).finish());
   }
 }
 
 export class WebSocketMessage extends WebSocketMessageOrig {
   static decode(data, encoding) {
-    return convertBuffers(convertBuffers(WebSocketMessageOrig.decode(new Uint8Array(ByteBufferClass.isByteBuffer(data) ? data.toArrayBuffer() : data.buffer))));;
+    return convertBuffers(WebSocketMessageOrig.decode(new Uint8Array(ByteBufferClass.isByteBuffer(data) ? data.toArrayBuffer() : b2ab(data))));
   }
 
   encode() {
@@ -737,13 +742,13 @@ export class WebSocketMessage extends WebSocketMessageOrig {
   }
 
   toArrayBuffer() {
-    return WebSocketMessageOrig.encode(this).finish().buffer;
+    return b2ab(WebSocketMessageOrig.encode(this).finish());
   }
 }
 
 export class WebSocketRequestMessage extends WebSocketRequestMessageOrig {
   static decode(data, encoding) {
-    return convertBuffers(WebSocketRequestMessageOrig.decode(new Uint8Array(ByteBufferClass.isByteBuffer(data) ? data.toArrayBuffer() : data.buffer)));;
+    return convertBuffers(WebSocketRequestMessageOrig.decode(new Uint8Array(ByteBufferClass.isByteBuffer(data) ? data.toArrayBuffer() : b2ab(data))));
   }
 
   encode() {
@@ -751,13 +756,13 @@ export class WebSocketRequestMessage extends WebSocketRequestMessageOrig {
   }
 
   toArrayBuffer() {
-    return WebSocketRequestMessageOrig.encode(this).finish().buffer;
+    return b2ab(WebSocketRequestMessageOrig.encode(this).finish());
   }
 }
 
 export class WebSocketResponseMessage extends WebSocketResponseMessageOrig {
   static decode(data, encoding) {
-    return convertBuffers(WebSocketResponseMessageOrig.decode(new Uint8Array(ByteBufferClass.isByteBuffer(data) ? data.toArrayBuffer() : data.buffer)));;
+    return convertBuffers(WebSocketResponseMessageOrig.decode(new Uint8Array(ByteBufferClass.isByteBuffer(data) ? data.toArrayBuffer() : b2ab(data))));
   }
 
   encode() {
@@ -765,13 +770,13 @@ export class WebSocketResponseMessage extends WebSocketResponseMessageOrig {
   }
 
   toArrayBuffer() {
-    return WebSocketResponseMessageOrig.encode(this).finish().buffer;
+    return b2ab(WebSocketResponseMessageOrig.encode(this).finish());
   }
 }
 
 export class WhisperMessage extends WhisperMessageOrig {
   static decode(data, encoding) {
-    return convertBuffers(WhisperMessageOrig.decode(new Uint8Array(ByteBufferClass.isByteBuffer(data) ? data.toArrayBuffer() : data.buffer)));;
+    return convertBuffers(WhisperMessageOrig.decode(new Uint8Array(ByteBufferClass.isByteBuffer(data) ? data.toArrayBuffer() : b2ab(data))));
   }
 
   encode() {
@@ -779,13 +784,13 @@ export class WhisperMessage extends WhisperMessageOrig {
   }
 
   toArrayBuffer() {
-    return WhisperMessageOrig.encode(this).finish().buffer;
+    return b2ab(WhisperMessageOrig.encode(this).finish());
   }
 }
 
 export class WriteOperation extends WriteOperationOrig {
   static decode(data, encoding) {
-    return convertBuffers(WriteOperationOrig.decode(new Uint8Array(ByteBufferClass.isByteBuffer(data) ? data.toArrayBuffer() : data.buffer)));;
+    return convertBuffers(WriteOperationOrig.decode(new Uint8Array(ByteBufferClass.isByteBuffer(data) ? data.toArrayBuffer() : b2ab(data))));
   }
 
   encode() {
@@ -793,6 +798,6 @@ export class WriteOperation extends WriteOperationOrig {
   }
 
   toArrayBuffer() {
-    return WriteOperationOrig.encode(this).finish().buffer;
+    return b2ab(WriteOperationOrig.encode(this).finish());
   }
 }
