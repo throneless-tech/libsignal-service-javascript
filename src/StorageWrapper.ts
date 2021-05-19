@@ -420,7 +420,7 @@ export class StorageConversations {
       window.log.warn('Called StorageConversations.get before storage is ready. key:', id);
     }
 
-    return Object.values(this._items).find(conv => conv.id === id || conv.e164 === id);
+    return Object.values(this._items).find(conv => conv.id === id || conv.uuid === id || conv.e164 === id);
   }
 
   async getAllGroupsInvolvingId(conversationId: string): Promise<Conversation[]> {

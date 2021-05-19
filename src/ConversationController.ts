@@ -135,7 +135,7 @@ export class ConversationController {
     //};
 
     //conversation.initialPromise = create();
-    this._conversations.add(conversation.attributes);
+    //this._conversations.add(conversation.attributes);
 
     return conversation;
   }
