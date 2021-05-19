@@ -212,7 +212,7 @@ async function main() {
           console.log('*** EVENT ***:', ev);
           ev.data.message.attachments.map(attachment => {
             messageReceiver
-              .handleAttachment(attachment)
+              .downloadAttachment(attachment)
               .then(attachmentPointer => {
                 Signal.AttachmentHelper.saveFile(attachmentPointer, './').then(
                   fileName => {
