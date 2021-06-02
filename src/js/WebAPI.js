@@ -1,4 +1,3 @@
-import config from 'config';
 import fetch from 'node-fetch';
 import semver from 'semver';
 import ProxyAgent from 'proxy-agent';
@@ -391,18 +390,18 @@ async function _outerAjax(url, options) {
 const version = semver.valid(semver.coerce(process.env.npm_package_version));
 
 const WebAPI = initialize({
-    url: config.get('serverUrl'),
-    storageUrl: config.get('storageUrl'),
-    directoryUrl: config.get('directoryUrl'),
-    directoryEnclaveId: config.get('directoryEnclaveId'),
-    directoryTrustAnchor: config.get('directoryTrustAnchor'),
+    url: CONFIG.serverUrl,
+    storageUrl: CONFIG.storageUrl,
+    directoryUrl: CONFIG.directoryUrl,
+    directoryEnclaveId: CONFIG.directoryEnclaveId,
+    directoryTrustAnchor: CONFIG.directoryTrustAnchor,
     cdnUrlObject: {
-      0: config.get('cdn.0'),
-      2: config.get('cdn.2'),
+      0: CONFIG.cdn[0],
+      2: CONFIG.cdn[2],
     },
-    certificateAuthority: config.get('certificateAuthority'),
-    contentProxyUrl: config.get('contentProxyUrl'),
-    proxyUrl: config.proxyUrl,
+    certificateAuthority: CONFIG.certificateAuthority,
+    contentProxyUrl: CONFIG.contentProxyUrl,
+    proxyUrl: CONFIG.proxyUrl,
     version,
 });
 
@@ -418,13 +417,13 @@ WebAPI.connect = (username, password) => {
     
       return _outerAjax(null, {
         basicAuth: param.basicAuth,
-        certificateAuthority: config.get('certificateAuthority'),
+        certificateAuthority: CONFIG.certificateAuthority,
         contentType: param.contentType || 'application/json; charset=utf-8',
         data: param.data || (param.jsonData && _jsonThing(param.jsonData)),
-        host: param.host || config.get('serverUrl'),
+        host: param.host || CONFIG.serverUrl,
         password: param.password || password,
         path: URL_CALLS[param.call] + param.urlParameters,
-        proxyUrl: config.proxyUrl,
+        proxyUrl: CONFIG.proxyUrl,
         responseType: param.responseType,
         timeout: param.timeout,
         type: param.httpType,

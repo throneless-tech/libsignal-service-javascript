@@ -1,7 +1,8 @@
+import { default as nodeConfig } from 'config';
 import { resolve } from 'path';
 import { Configuration } from 'webpack';
 import nodeExternals from 'webpack-node-externals';
-import { EnvironmentPlugin, ProvidePlugin } from 'webpack';
+import { DefinePlugin, EnvironmentPlugin, ProvidePlugin } from 'webpack';
 
 const { NODE_ENV: mode = 'development' } = process.env;
 
@@ -28,6 +29,9 @@ const config: Configuration = {
     window: 'global/window',
     btoa: 'btoa',
     Event: [resolve(__dirname, 'src/shims/Event'), 'EventShim'],
+   }),
+   new DefinePlugin({
+     CONFIG: JSON.stringify(nodeConfig),
    }),
   ],
   module: {

@@ -1,4 +1,3 @@
-import config from 'config';
 import { textsecure } from '../lib/ts/textsecure/index';
 import { AttachmentPointerClass, DownloadAttachmentType } from '../lib/ts/textsecure.d';
 import { getCredentials, maybeInitMessaging } from './utils';
@@ -8,9 +7,8 @@ export class MessageReceiver {
   constructor() {
     const [username, password] = getCredentials();
     maybeInitMessaging(username, password);
-    const {serverTrustRoot} = config;
 
-    this._inner = new textsecure.MessageReceiver(username, undefined, password, undefined, { serverTrustRoot });
+    this._inner = new textsecure.MessageReceiver(username, undefined, password, undefined, { serverTrustRoot: CONFIG.serverTrustRoot });
   }
 
   addEventListener(name: string, handler: Function) {
