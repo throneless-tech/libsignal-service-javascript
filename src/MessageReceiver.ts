@@ -1,6 +1,8 @@
 import { textsecure } from '../lib/ts/textsecure/index';
 import { AttachmentPointerClass, DownloadAttachmentType } from '../lib/ts/textsecure.d';
-import { getCredentials, maybeInitMessaging } from './utils';
+import { getCredentials, getConfig, maybeInitMessaging } from './utils';
+
+const CONFIG = getConfig();
 
 export class MessageReceiver {
   private _inner: InstanceType<typeof textsecure.MessageReceiver>;

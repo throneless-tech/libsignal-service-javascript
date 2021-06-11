@@ -38,3 +38,7 @@ export function maybeInitMessaging(username: string, password: string) {
     }
   }
 }
+
+export function getConfig() {
+  return process.env.NODE_ENV === 'production' ? CONFIG_PROD : CONFIG_DEV;
+}

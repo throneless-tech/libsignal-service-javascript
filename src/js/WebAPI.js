@@ -4,6 +4,9 @@ import ProxyAgent from 'proxy-agent';
 import { Agent } from 'https';
 import { initialize } from '../../lib/ts/textsecure/WebAPI';
 import { getUserAgent } from '../../lib/ts/util/getUserAgent';
+import { getConfig } from '../utils';
+
+const CONFIG = getConfig();
 
 const DEBUG = true;
 

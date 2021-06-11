@@ -9,7 +9,8 @@ import { fromBits, fromString } from '../LongExtended';
 import { WebAPIConnectType } from '../WebAPI';
 
 declare global {
-  const CONFIG: Record<string, any>;
+  const CONFIG_DEV: Record<string, any>;
+  const CONFIG_PROD: Record<string, any>;
   interface Window {
     crypto: Crypto,
     CI?: {

@@ -1,17 +1,19 @@
-import { default as nodeConfig } from 'config';
 import { resolve } from 'path';
 import { Configuration } from 'webpack';
 import nodeExternals from 'webpack-node-externals';
+import { default as nodeConfig } from 'config';
 import { DefinePlugin, EnvironmentPlugin, ProvidePlugin } from 'webpack';
 
 const { NODE_ENV: mode = 'development' } = process.env;
 
+process.env.NODE_CONFIG_ENV = 'development';
+const devConfig = nodeConfig.util.loadFileConfigs();
+process.env.NODE_CONFIG_ENV = 'production';
+const prodConfig = nodeConfig.util.loadFileConfigs();
+
 const config: Configuration = {
   externalsPresets: { node: true },
   externals: [nodeExternals()],
-  //externals: [nodeExternals({
-  //  allowlist: ['https'],
-  //})],
   mode: mode as Configuration['mode'],
   devtool: 'source-map',
   entry: './src/index.ts',
@@ -23,6 +25,9 @@ const config: Configuration = {
       type: 'umd',
     },
   },
+  optimization: {
+    nodeEnv: false,
+  },
   plugins: [
    new EnvironmentPlugin(['npm_package_version']),
    new ProvidePlugin({
@@ -31,7 +36,8 @@ const config: Configuration = {
     Event: [resolve(__dirname, 'src/shims/Event'), 'EventShim'],
    }),
    new DefinePlugin({
-     CONFIG: JSON.stringify(nodeConfig),
+     CONFIG_DEV: JSON.stringify(devConfig),
+     CONFIG_PROD: JSON.stringify(prodConfig),
    }),
   ],
   module: {
