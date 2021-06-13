@@ -1,6 +1,6 @@
 {
   "name": "@throneless/libsignal-service",
-  "version": "5.0.0-alpha.3.2",
+  "version": "5.0.0-alpha.3.3",
   "description": "A fork of the the libtextsecure components of Signal-Desktop, adapted for use by nodejs.",
   "main": "dist/libsignal-service.js",
   "files": [
@@ -44,7 +44,7 @@
     "https-browserify": "^1.0.0",
     "image-size": "^0.7.5",
     "libsignal-client": "https://github.com/signalapp/libsignal-client-node.git#f10fbd04eb6efb396eb12c25429761e8785dc9d0",
-    "lodash": "4.17.20",
+    "lodash": "^4.17.21",
     "long": "^4.0.0",
     "memoizee": "0.4.14",
     "mime-types": "^2.1.24",
