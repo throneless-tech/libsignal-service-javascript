@@ -40,5 +40,8 @@ export function maybeInitMessaging(username: string, password: string) {
 }
 
 export function getConfig() {
+  if (process.env.NODE_CONFIG_ENV) {
+    return process.env.NODE_CONFIG_ENV === 'production' ? CONFIG_PROD : CONFIG_DEV;
+  }
   return process.env.NODE_ENV === 'production' ? CONFIG_PROD : CONFIG_DEV;
 }

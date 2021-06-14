@@ -245,16 +245,19 @@ export class ConversationController {
       );
       // If we are only searching based on e164 anyway, then return the first result
       if (!normalizedUuid) {
+        window.log.info('ensureContactIds: ***!normalizedUuid***');
         return convoE164.get('id');
       }
 
       // Fill in the UUID for an e164-only contact
       if (normalizedUuid && !convoE164.get('uuid')) {
         if (highTrust) {
+          window.log.info('ensureContactIds: ***highTrust***');
           window.log.info('ensureContactIds: Adding UUID to e164-only match');
           convoE164.updateUuid(normalizedUuid);
           this._conversations.add(convoE164.attributes);
         }
+        window.log.info('ensureContactIds: ***return convoE164.get(id)***');
         return convoE164.get('id');
       }
 

@@ -402,6 +402,7 @@ export class SignalProtocolStore extends EventTarget {
   // Sessions
 
   async loadSession(encodedAddress: string): Promise<string | undefined> {
+    console.log('***loadSession this.sessions***:', this.sessions);
     if (!this.sessions) {
       throw new Error('loadSession: this.sessions not yet cached!');
     }
