@@ -45,8 +45,8 @@ class AccountManager extends EventTarget {
     return this.server.requestVerificationVoice(this.username);
   }
 
-  requestSMSVerification() {
-    return this.server.requestVerificationSMS(this.username);
+  requestSMSVerification(token) {
+    return this.server.requestVerificationSMS(this.username, token);
   }
 
   async encryptDeviceName(name, providedIdentityKey) {
