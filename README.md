@@ -53,6 +53,21 @@ accountManager.registerSingleDevice("myCode").then(result => {
 });
 ```
 
+##### CAPTCHA challenge requirement
+Sometimes the Signal server requires a captcha token for registering a new account. The registration fails with a captcha required error or with `402 Payment Required` error. In this case, you need to solve a CAPTCHA challenge.
+
+To get the token, got to [Captcha generation](https://signalcaptchas.org/registration/generate.html). After filling the captcha, the site doesn't show the token but redirects to a signalcaptcha:// url that contains the token. To see the URL you can open the browser developer tools (F12) before completing the captcha. Check the console/network tab in the developer tools for a redirect starting with `signalcaptcha://`. Everything after `signalcaptcha://` is the captcha token.
+
+You can pass the captcha token to `registerSingleDevice` function like so:
+```
+const captchaToken = "...";
+accountManager.requestSMSVerification(captchaToken).then(result => {
+  console.log("Sent verification code.");
+});
+```
+
+Note: Captcha token is valid for only a short period of time.
+
 ### Sending messages
 
 To send a message, connect a `MessageSender` instance to the Signal service:

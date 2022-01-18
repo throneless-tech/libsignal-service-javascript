@@ -616,11 +616,11 @@ function initialize({
       });
     }
 
-    function requestVerificationSMS(number) {
+    function requestVerificationSMS(number, token) {
       return _ajax({
         call: 'accounts',
         httpType: 'GET',
-        urlParameters: `/sms/code/${number}`,
+        urlParameters: `/sms/code/${number}${token ? `?captcha=${token}` : '' }`,
       });
     }
 
